@@ -43,6 +43,23 @@ LLM Proxy 는 대기열 방식이라 Dify 의 스트리밍과 맞지 않아 **oM
 검문소(`dify-ssrf-proxy`)는 사내망을 막으므로 oMLX 주소만 `SSRF_PROXY_ALLOW_PRIVATE_IPS=192.168.219.48/32` 로 열어 두었다. 다른 사내 주소가 필요하면 `app-sandbox.yaml` 에 더한다.
 bbb 의 남는 칸 채우기(Idle Dispatcher)는 Dify 호출을 모른다. 둘이 겹쳐 느리면 bbb LLM 설정에서 reserve 를 1 로 둔다.
 
+## 자동 배포 (소스 수정 → 배포)
+
+GitHub `hyungjin7/dify` main → `.github/workflows/sync-to-gitea.yml` → Gitea `hyungjin7/dify` main → `.gitea/workflows/ci.yml`.
+CI 는 바뀐 폴더만 이미지로 빌드해 `gitea.delvrio.com/hyungjin7/dify/<api|web|agent|local-sandbox>:<sha>` 에 올리고 `kubectl apply -k` 로 배포한다.
+
+| 바뀐 곳 | 이미지 | 바뀌는 배포 |
+|---|---|---|
+| `api/`, `dify-agent/` | api | dify-api·dify-api-ws·dify-worker·dify-beat |
+| `web/`, `packages/`, `package.json`·`pnpm-lock.yaml` 등 | web | dify-web |
+| `dify-agent/` | agent | dify-agent-backend |
+| `dify-agent-runtime/` | local-sandbox | dify-local-sandbox |
+| `deploy/k3s/` 만 | 빌드 없음 | 설정만 적용 |
+
+- 우리 이미지가 아직 없는 부분은 공식 이미지(`langgenius/*:1.19.0`)로 돈다. 처음 한 번 전부 우리 이미지로 바꾸려면 Gitea › Actions › dify CI/CD › Run workflow, build=`all`.
+- 처음 한 번 준비: GitHub 포크 Settings › Secrets 에 `GITEA_USER`·`GITEA_TOKEN`(odysseus 와 같은 값), Gitea 저장소에서 Actions 켜기. Secret `dify-db`·`dify-secret` 이 없으면 CI 는 빌드만 하고 배포는 건너뛴다.
+- web 이미지는 빌드가 오래 걸린다(수십 분). api 를 고치면 DB 마이그레이션이 api 기동 때 자동으로 돈다.
+
 ## 업그레이드
 
 이미지 태그 `1.19.0` 을 새 버전으로 바꾸고 `kubectl apply -k`. 새 버전의 `docker/envs/**/*.defaults`·`docker-compose.yaml` 에 새 서비스·환경 변수가 생겼는지 먼저 본다.

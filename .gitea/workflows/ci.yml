@@ -1,0 +1,152 @@
+name: dify CI/CD
+
+# Gitea main push → 바뀐 부분만 이미지로 빌드해 k3s namespace dify 에 배포한다(dify.delvrio.com).
+# GitHub main → Gitea main 동기화는 .github/workflows/sync-to-gitea.yml. 러너·레지스트리·kubeconfig 는 odysseus·slp 와 같다.
+#
+# 이미지 4개(나머지 sandbox·plugin-daemon·squid·nginx 는 공식 이미지 그대로):
+#   api           ← api/ dify-agent/          → dify-api · dify-api-ws · dify-worker · dify-beat
+#   web           ← web/ packages/ 등          → dify-web
+#   agent         ← dify-agent/               → dify-agent-backend
+#   local-sandbox ← dify-agent-runtime/       → dify-local-sandbox
+# 매니페스트는 공식 이미지(langgenius/*:1.19.0)를 적어 두고, CI 가 kustomize images 로 바꿔 끼운다:
+#   이번에 빌드했으면 :<sha>, 아니면 지금 돌고 있는 우리 이미지 태그, 우리 이미지가 없으면 공식 이미지 그대로.
+# 태그는 되커밋하지 않는다.
+on:
+  push:
+    branches:
+      - main
+  # 수동 실행(Run workflow): 입력 build 에 api,web,agent,local-sandbox 중 쉼표로(all = 전부)
+  workflow_dispatch:
+    inputs:
+      build:
+        description: "빌드할 이미지(api,web,agent,local-sandbox 또는 all)"
+        required: false
+        default: ""
+
+env:
+  REGISTRY: "gitea.delvrio.com/hyungjin7/dify"
+  NS: dify
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes
+        id: detect
+        run: |
+          set -e
+          BEFORE="${{ gitea.event.before }}"
+          AFTER="${{ gitea.event.after }}"
+          if [ -z "$BEFORE" ] || ! git rev-parse --verify -q "${BEFORE}^{commit}" >/dev/null; then
+            BEFORE=$(git rev-parse -q --verify "${AFTER:-HEAD}~1" || git hash-object -t tree /dev/null)
+          fi
+          DIFF=$(git diff --name-only "$BEFORE" "${AFTER:-HEAD}" || true)
+          echo "변경 파일:"; echo "$DIFF"
+          want() { echo "$DIFF" | grep -qE "$1" && echo true || echo false; }
+          API=$(want '^(api/|dify-agent/)')
+          WEB=$(want '^(web/|packages/|patches/|sdks/nodejs-client/|e2e/package\.json|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)')
+          AGENT=$(want '^dify-agent/')
+          SANDBOX=$(want '^dify-agent-runtime/')
+          MANUAL="${{ gitea.event.inputs.build }}"
+          if [ -n "$MANUAL" ]; then
+            for x in api web agent local-sandbox; do
+              case ",$MANUAL," in *",all,"*|*",$x,"*)
+                case $x in api) API=true;; web) WEB=true;; agent) AGENT=true;; local-sandbox) SANDBOX=true;; esac;;
+              esac
+            done
+          fi
+          echo "api=$API" >> "$GITHUB_OUTPUT"
+          echo "web=$WEB" >> "$GITHUB_OUTPUT"
+          echo "agent=$AGENT" >> "$GITHUB_OUTPUT"
+          echo "local_sandbox=$SANDBOX" >> "$GITHUB_OUTPUT"
+          echo "빌드: api=$API web=$WEB agent=$AGENT local-sandbox=$SANDBOX"
+
+      - name: Install kubectl
+        run: |
+          curl -sLo /usr/local/bin/kubectl "https://dl.k8s.io/release/v1.36.3/bin/linux/amd64/kubectl"
+          chmod +x /usr/local/bin/kubectl
+
+      - name: Check prerequisites
+        id: pre
+        run: |
+          set -e
+          K="kubectl --kubeconfig=/root/.kube/config"
+          $K apply -f deploy/k3s/00-namespace.yaml
+          # 이미지 pull 인증 — 없으면 bbb-namespace 것을 복사한다(같은 레지스트리 계정)
+          if ! $K get secret gitea-registry-auth -n $NS >/dev/null 2>&1; then
+            $K get secret gitea-registry-auth -n bbb-namespace -o json \
+              | jq 'del(.metadata.uid,.metadata.resourceVersion,.metadata.creationTimestamp,.metadata.managedFields,.metadata.annotations,.metadata.ownerReferences) | .metadata.namespace="'$NS'"' \
+              | $K apply -f -
+          fi
+          if $K get secret dify-db -n $NS >/dev/null 2>&1 && $K get secret dify-secret -n $NS >/dev/null 2>&1; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Secret dify-db·dify-secret 이 없습니다 — 먼저 python3 deploy/k3s/provision.py --apply (deploy/k3s/README.md). 이번에는 이미지만 빌드합니다."
+          fi
+
+      - name: Build api
+        if: steps.detect.outputs.api == 'true'
+        run: |
+          docker buildx build --provenance=false --sbom=false -f api/Dockerfile --build-arg COMMIT_SHA=${{ gitea.sha }} \
+            -t ${{ env.REGISTRY }}/api:${{ gitea.sha }} -t ${{ env.REGISTRY }}/api:latest --push .
+
+      - name: Build web
+        if: steps.detect.outputs.web == 'true'
+        run: |
+          docker buildx build --provenance=false --sbom=false -f web/Dockerfile --build-arg COMMIT_SHA=${{ gitea.sha }} \
+            -t ${{ env.REGISTRY }}/web:${{ gitea.sha }} -t ${{ env.REGISTRY }}/web:latest --push .
+
+      - name: Build agent
+        if: steps.detect.outputs.agent == 'true'
+        run: |
+          docker buildx build --provenance=false --sbom=false -f dify-agent/Dockerfile \
+            -t ${{ env.REGISTRY }}/agent:${{ gitea.sha }} -t ${{ env.REGISTRY }}/agent:latest --push .
+
+      - name: Build local-sandbox
+        if: steps.detect.outputs.local_sandbox == 'true'
+        run: |
+          docker buildx build --provenance=false --sbom=false -f dify-agent-runtime/docker/Dockerfile \
+            -t ${{ env.REGISTRY }}/local-sandbox:${{ gitea.sha }} -t ${{ env.REGISTRY }}/local-sandbox:latest --push dify-agent-runtime
+
+      - name: Deploy
+        if: steps.pre.outputs.ready == 'true'
+        run: |
+          set -e
+          K="kubectl --kubeconfig=/root/.kube/config"
+          SHA=${{ gitea.sha }}
+          # 공식 이미지 → 쓸 이미지. 형식: 공식이름 우리이름 배포이름 이번빌드여부
+          pick() {
+            local official=$1 ours=$2 deploy=$3 built=$4 cur
+            if [ "$built" = "true" ]; then echo "${{ env.REGISTRY }}/$ours:$SHA"; return; fi
+            cur=$($K get deploy "$deploy" -n $NS -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)
+            case "$cur" in "${{ env.REGISTRY }}/$ours:"*) echo "$cur";; *) echo "";; esac
+          }
+          {
+            echo "images:"
+            for row in \
+              "langgenius/dify-api api dify-api ${{ steps.detect.outputs.api }}" \
+              "langgenius/dify-web web dify-web ${{ steps.detect.outputs.web }}" \
+              "langgenius/dify-agent-backend agent dify-agent-backend ${{ steps.detect.outputs.agent }}" \
+              "langgenius/dify-agent-local-sandbox local-sandbox dify-local-sandbox ${{ steps.detect.outputs.local_sandbox }}"; do
+              set -- $row
+              img=$(pick "$1" "$2" "$3" "$4")
+              if [ -n "$img" ]; then
+                echo "- name: $1"
+                echo "  newName: ${img%:*}"
+                echo "  newTag: \"${img##*:}\""
+                echo "$1 → $img" >&2
+              fi
+            done
+          } > /tmp/images.yaml
+          # images: 항목이 하나라도 있으면 kustomization 에 붙인다(작업 공간에서만, 커밋 안 함)
+          if grep -q '^- name:' /tmp/images.yaml; then cat /tmp/images.yaml >> deploy/k3s/kustomization.yaml; fi
+          $K apply -k deploy/k3s
+          for d in dify-api dify-worker dify-web dify-plugin-daemon dify-agent-backend dify-nginx; do
+            $K rollout status deployment/$d -n $NS --timeout=900s || echo "::warning::$d rollout 대기 시간 초과"
+          done
