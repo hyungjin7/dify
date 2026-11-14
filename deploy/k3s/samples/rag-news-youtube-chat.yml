@@ -116,7 +116,7 @@ workflow:
           - '10'
           - '15'
           - '20'
-          required: true
+          required: false   # 비우면 코드 노드가 6건으로 둔다(필수로 두면 대화 중·API 호출에서 'top_k is required' 오류)
           type: select
           variable: top_k
       height: 116
