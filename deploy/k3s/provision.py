@@ -128,10 +128,11 @@ for official, ours, deploy in (("langgenius/dify-api", "api", "dify-api"),
         cur = ""
     if cur.startswith(f"{REG}/{ours}:"):
         images.append((official, cur.rsplit(":", 1)))
-# 임시 kustomization 은 이 폴더 안에 만든다(macOS 의 /var → /private/var 같은 링크 때문에 바깥 상대 경로가 어긋난다).
-with tempfile.TemporaryDirectory(dir=here, prefix=".apply-") as tmp:
+# 임시 kustomization 은 옆 폴더(deploy/.apply-*)에 만든다. /tmp 는 macOS 링크(/var → /private/var)로,
+# k3s 안쪽은 kustomize 순환 오류로 실패한다(2026-11-14).
+with tempfile.TemporaryDirectory(dir=os.path.dirname(here), prefix=".apply-") as tmp:
     with open(os.path.join(tmp, "kustomization.yaml"), "w") as f:
-        f.write("resources:\n- ..\n")
+        f.write(f"resources:\n- ../{os.path.basename(here)}\n")
         if images:
             f.write("images:\n")
             for official, (name, tag) in images:
