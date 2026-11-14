@@ -19,6 +19,7 @@ Dify 1.19.0 공식 이미지(`langgenius/*`)를 그대로 쓴다. 소스는 고�
 - Redis: `redis-service.bbb-namespace`(비밀번호 없음). bbb 가 0번을 쓰므로 Dify 는 10(캐시)·11(Celery)·12(Agent).
 - 비밀: Secret `dify-db`(DB_HOST·DB_PORT·DB_USERNAME·DB_PASSWORD·DB_DATABASE·PGVECTOR_*), `dify-secret`(SECRET_KEY·INIT_PASSWORD·DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN 외 내부 키). `provision.py` 가 만들고 커밋하지 않는다.
 - 로그인: Dify 자체 계정. `/install` 은 `INIT_PASSWORD` 를 알아야 열린다.
+- API 동시 연결: `app-api.yaml` 의 `dify-api` 컨테이너에 `SERVER_WORKER_CONNECTIONS=100` 을 명시한다. 기본 한도 10개에서 발생한 약 10초 대기를 줄이는 설정이며, `provision.py --apply` 또는 `kubectl apply -k deploy/k3s` 로 재배포해도 유지된다. API 프로세스 수와 DB 연결 풀 크기는 그대로 둔다.
 
 ## 설치 (kubectl 되는 곳에서)
 
