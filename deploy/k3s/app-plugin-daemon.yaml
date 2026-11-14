@@ -55,7 +55,9 @@ spec:
         - {name: PLUGIN_MEDIA_CACHE_PATH, value: assets}
         - {name: PLUGIN_PACKAGE_CACHE_PATH, value: plugin_packages}
         - {name: MAX_PLUGIN_PACKAGE_SIZE, value: "52428800"}
-        - {name: PYTHON_ENV_INIT_TIMEOUT, value: "120"}
+        # 플러그인 설치(pip 내려받기 + NFS 에 가상환경 쓰기)가 120초를 넘겨 죽었다(2026-11-14) → 15분
+        - {name: PYTHON_ENV_INIT_TIMEOUT, value: "900"}
+        - {name: UV_CACHE_DIR, value: /tmp/.uv-cache}   # 내려받기 캐시는 노드 디스크(emptyDir), NFS 아님
         - {name: PLUGIN_MAX_EXECUTION_TIMEOUT, value: "600"}
         - {name: FORCE_VERIFYING_SIGNATURE, value: "true"}
         - {name: PPROF_ENABLED, value: "false"}
@@ -67,6 +69,8 @@ spec:
         volumeMounts:
         - name: storage
           mountPath: /app/storage
+        - name: tmp
+          mountPath: /tmp
         resources:
           requests: {cpu: 200m, memory: 512Mi}
           limits: {memory: 3Gi}
@@ -74,6 +78,8 @@ spec:
       - name: storage
         persistentVolumeClaim:
           claimName: dify-plugin-storage
+      - name: tmp
+        emptyDir: {sizeLimit: 5Gi}
 ---
 apiVersion: v1
 kind: Service
