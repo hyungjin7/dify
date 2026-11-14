@@ -45,9 +45,19 @@ workflow:
     - data:
         isInIteration: false
         sourceType: start
-        targetType: http-request
-      id: start-search
+        targetType: code
+      id: start-build
       source: 'start'
+      sourceHandle: source
+      target: 'build'
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: build-search
+      source: 'build'
       sourceHandle: source
       target: 'search'
       targetHandle: target
@@ -122,6 +132,55 @@ workflow:
       type: custom
       width: 244
     - data:
+        code: |
+          import json
+
+
+          def main(query: str, scope: str, top_k: str) -> dict:
+              # 질문을 JSON 글자로 안전하게 바꾼다(줄바꿈·따옴표가 있어도 깨지지 않게)
+              try:
+                  k = max(1, min(int(str(top_k or "6").strip()), 20))
+              except ValueError:
+                  k = 6
+              body = {"knowledge_id": (scope or "all").strip() or "all",
+                      "query": " ".join(str(query or "").split())[:300],
+                      "retrieval_setting": {"top_k": k, "score_threshold": 0}}
+              return {"body": json.dumps(body, ensure_ascii=False)}
+        code_language: python3
+        desc: 질문·범위·자료 수를 검색 요청(JSON)으로 만든다
+        outputs:
+          body:
+            children: null
+            type: string
+        selected: false
+        title: 검색 요청 만들기
+        type: code
+        variables:
+        - value_selector:
+          - sys
+          - query
+          variable: query
+        - value_selector:
+          - start
+          - scope
+          variable: scope
+        - value_selector:
+          - start
+          - top_k
+          variable: top_k
+      height: 54
+      id: 'build'
+      position:
+        x: 232
+        y: 420
+      positionAbsolute:
+        x: 232
+        y: 420
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
         authorization:
           config:
             api_key: '{{#env.rag_api_key#}}'
@@ -131,7 +190,7 @@ workflow:
         body:
           data:
           - type: text
-            value: '{"knowledge_id": "{{#start.scope#}}", "query": "{{#sys.query#}}", "retrieval_setting": {"top_k": {{#start.top_k#}}, "score_threshold": 0}}'
+            value: '{{#build.body#}}'
           type: json
         desc: 우리 RAG 검색(키워드+의미). 클러스터 안 주소라 바깥에 열려 있지 않다.
         headers: Content-Type:application/json
