@@ -74,7 +74,7 @@ workflow:
       type: custom
     nodes:
     - data:
-        desc: '검색 범위: all · news · youtube · report(종목 리포트), 주제 news:macro, 기간 news:7d (기간 없어도 최근 자료 우선)'
+        desc: '검색 범위: all · news · youtube · report(종목·산업 리포트), 주제 news:macro, 기간 news:7d (기간 없어도 최근 자료 우선). 가져올 자료 수 3~20(많을수록 느림)'
         selected: false
         title: 시작
         type: start
@@ -98,6 +98,17 @@ workflow:
           required: false
           type: select
           variable: scope
+        - default: '6'
+          label: 가져올 자료 수
+          options:
+          - '3'
+          - '6'
+          - '10'
+          - '15'
+          - '20'
+          required: true
+          type: select
+          variable: top_k
       height: 116
       id: 'start'
       position:
@@ -120,7 +131,7 @@ workflow:
         body:
           data:
           - type: text
-            value: '{"knowledge_id": "{{#start.scope#}}", "query": "{{#sys.query#}}", "retrieval_setting": {"top_k": 6, "score_threshold": 0}}'
+            value: '{"knowledge_id": "{{#start.scope#}}", "query": "{{#sys.query#}}", "retrieval_setting": {"top_k": {{#start.top_k#}}, "score_threshold": 0}}'
           type: json
         desc: 우리 RAG 검색(키워드+의미). 클러스터 안 주소라 바깥에 열려 있지 않다.
         headers: Content-Type:application/json
