@@ -40,6 +40,9 @@ spec:
         env:
         - name: MODE
           value: "api"
+        # 유휴 연결이 기본 한도 10개를 채워 화면 요청이 약 10초씩 대기하는 것을 방지한다.
+        - name: SERVER_WORKER_CONNECTIONS
+          value: "100"
         - name: AGENT_BACKEND_API_TOKEN
           valueFrom:
             secretKeyRef: {name: dify-secret, key: DIFY_AGENT_API_TOKEN}
