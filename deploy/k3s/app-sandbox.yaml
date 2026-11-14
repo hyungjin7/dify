@@ -1,0 +1,115 @@
+# 코드 실행 칸막이(sandbox)와 바깥 요청 검문소(ssrf-proxy, Squid).
+# sandbox 는 networkpolicy.yaml 로 ssrf-proxy 에만 나갈 수 있다. 검문소는 사내망(10/8·192.168/16 등)으로 가는 요청을 막는다.
+# 사내 oMLX(192.168.219.48)처럼 열어야 할 곳만 SSRF_PROXY_ALLOW_PRIVATE_IPS 에 적는다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dify-sandbox
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dify-sandbox
+  template:
+    metadata:
+      labels:
+        app: dify-sandbox
+    spec:
+      enableServiceLinks: false
+      automountServiceAccountToken: false
+      containers:
+      - name: sandbox
+        image: langgenius/dify-sandbox:0.2.15
+        env:
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef: {name: dify-secret, key: CODE_EXECUTION_API_KEY}
+        - {name: GIN_MODE, value: release}
+        - {name: WORKER_TIMEOUT, value: "15"}
+        - {name: ENABLE_NETWORK, value: "true"}
+        - {name: HTTP_PROXY, value: "http://dify-ssrf-proxy:3128"}
+        - {name: HTTPS_PROXY, value: "http://dify-ssrf-proxy:3128"}
+        - {name: SANDBOX_PORT, value: "8194"}
+        ports:
+        - containerPort: 8194
+        readinessProbe:
+          httpGet: {path: /health, port: 8194}
+          periodSeconds: 15
+        volumeMounts:
+        - name: conf
+          mountPath: /conf
+        - name: dependencies
+          mountPath: /dependencies
+        resources:
+          requests: {cpu: 100m, memory: 128Mi}
+          limits: {memory: 1Gi}
+      volumes:
+      - name: conf
+        configMap:
+          name: dify-sandbox-conf
+      - name: dependencies   # 휘발성(기동 때 다시 설치)
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dify-sandbox
+spec:
+  selector:
+    app: dify-sandbox
+  ports:
+  - port: 8194
+    targetPort: 8194
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dify-ssrf-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dify-ssrf-proxy
+  template:
+    metadata:
+      labels:
+        app: dify-ssrf-proxy
+    spec:
+      enableServiceLinks: false
+      automountServiceAccountToken: false
+      containers:
+      - name: squid
+        image: ubuntu/squid:latest
+        command: ["bash", "/scripts/docker-entrypoint.sh"]
+        env:
+        - {name: HTTP_PORT, value: "3128"}
+        - {name: COREDUMP_DIR, value: /var/spool/squid}
+        - {name: SSRF_PROXY_ALLOW_PRIVATE_IPS, value: "192.168.219.48/32"}
+        - {name: SSRF_PROXY_ALLOW_PRIVATE_DOMAINS, value: ""}
+        ports:
+        - containerPort: 3128
+        readinessProbe:
+          tcpSocket: {port: 3128}
+          periodSeconds: 15
+        volumeMounts:
+        - {name: squid, mountPath: /etc/squid/squid.conf.template, subPath: squid.conf.template}
+        - {name: squid, mountPath: /etc/squid/dify_common.conf.template, subPath: squid-common.conf.template}
+        - {name: squid, mountPath: /scripts/docker-entrypoint.sh, subPath: docker-entrypoint.sh}
+        resources:
+          requests: {cpu: 50m, memory: 64Mi}
+          limits: {memory: 512Mi}
+      volumes:
+      - name: squid
+        configMap:
+          name: dify-squid
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dify-ssrf-proxy
+spec:
+  selector:
+    app: dify-ssrf-proxy
+  ports:
+  - port: 3128
+    targetPort: 3128

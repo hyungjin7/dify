@@ -1,0 +1,48 @@
+# Dify 화면(Next.js). 브라우저는 같은 주소(dify.delvrio.com)로 API 를 부르고 nginx 가 나눠 보낸다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dify-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dify-web
+  template:
+    metadata:
+      labels:
+        app: dify-web
+    spec:
+      enableServiceLinks: false
+      containers:
+      - name: web
+        image: langgenius/dify-web:1.19.0
+        env:
+        - {name: CONSOLE_API_URL, value: ""}
+        - {name: APP_API_URL, value: ""}
+        - {name: SERVER_CONSOLE_API_URL, value: "http://dify-api:5001"}
+        - {name: NEXT_PUBLIC_SOCKET_URL, value: "wss://dify.delvrio.com"}
+        - {name: NEXT_PUBLIC_ENABLE_AGENT_V2, value: "true"}
+        - {name: MARKETPLACE_API_URL, value: "https://marketplace.dify.ai"}
+        - {name: MARKETPLACE_URL, value: "https://marketplace.dify.ai"}
+        - {name: TEXT_GENERATION_TIMEOUT_MS, value: "60000"}
+        - {name: NEXT_TELEMETRY_DISABLED, value: "1"}
+        ports:
+        - containerPort: 3000
+        readinessProbe:
+          tcpSocket: {port: 3000}
+          periodSeconds: 15
+        resources:
+          requests: {cpu: 100m, memory: 256Mi}
+          limits: {memory: 1Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dify-web
+spec:
+  selector:
+    app: dify-web
+  ports:
+  - port: 3000
+    targetPort: 3000

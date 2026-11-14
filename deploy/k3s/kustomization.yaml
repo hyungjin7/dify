@@ -1,0 +1,33 @@
+# Dify 1.19.0 on k3s — 적용: kubectl apply -k deploy/k3s   (먼저 python3 deploy/k3s/provision.py --apply)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: dify
+labels:
+- pairs:
+    app.kubernetes.io/part-of: dify
+resources:
+- 00-namespace.yaml
+- config.yaml
+- pvc.yaml
+- app-api.yaml
+- app-web.yaml
+- app-plugin-daemon.yaml
+- app-sandbox.yaml
+- app-agent.yaml
+- app-nginx.yaml
+- ingress.yaml
+- networkpolicy.yaml
+configMapGenerator:
+- name: dify-nginx
+  files:
+  - files/nginx/default.conf
+- name: dify-squid
+  files:
+  - files/ssrf_proxy/squid.conf.template
+  - files/ssrf_proxy/squid-agent.conf.template
+  - files/ssrf_proxy/squid-common.conf.template
+  - files/ssrf_proxy/docker-entrypoint.sh
+  - files/ssrf_proxy/docker-agent-entrypoint.sh
+- name: dify-sandbox-conf
+  files:
+  - files/sandbox/config.yaml

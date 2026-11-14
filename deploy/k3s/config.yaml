@@ -1,0 +1,55 @@
+# 비밀이 아닌 설정. 비밀값(DB 비밀번호·키)은 provision.py 가 만드는 Secret dify-db·dify-secret 에 있다.
+# 원본 기본값: docker/envs/**/*.defaults. 여기 없는 값은 Dify 기본값을 따른다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dify-config
+data:
+  # 주소
+  CONSOLE_WEB_URL: "https://dify.delvrio.com"
+  CONSOLE_API_URL: "https://dify.delvrio.com"
+  SERVICE_API_URL: "https://dify.delvrio.com"
+  APP_WEB_URL: "https://dify.delvrio.com"
+  APP_API_URL: "https://dify.delvrio.com"
+  FILES_URL: "https://dify.delvrio.com"
+  INTERNAL_FILES_URL: "http://dify-api:5001"
+  TRIGGER_URL: "https://dify.delvrio.com"
+  ENDPOINT_URL_TEMPLATE: "https://dify.delvrio.com/e/{hook_id}"
+  CONSOLE_CORS_ALLOW_ORIGINS: "https://dify.delvrio.com"
+  WEB_API_CORS_ALLOW_ORIGINS: "*"
+  RESPECT_XFORWARD_HEADERS_ENABLED: "true"
+  DEPLOY_ENV: "PRODUCTION"
+  LOG_TZ: "Asia/Seoul"
+  LOG_FILE: ""
+  # 실행 방식
+  SERVER_WORKER_CLASS: "gevent"
+  GUNICORN_TIMEOUT: "360"
+  CELERY_WORKER_AMOUNT: "4"
+  # DB — 접속 정보는 Secret dify-db. 연결 수를 줄여 prod-pg 를 아낀다(기본 30+10).
+  DB_TYPE: "postgresql"
+  SQLALCHEMY_POOL_SIZE: "10"
+  SQLALCHEMY_MAX_OVERFLOW: "5"
+  # Redis — bbb-namespace 의 기존 redis-service(비밀번호 없음). bbb 는 0번을 쓰므로 Dify 는 10~12번.
+  REDIS_HOST: "redis-service.bbb-namespace.svc.cluster.local"
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: ""
+  REDIS_DB: "10"
+  CELERY_BROKER_URL: "redis://redis-service.bbb-namespace.svc.cluster.local:6379/11"
+  DIFY_AGENT_REDIS_URL: "redis://redis-service.bbb-namespace.svc.cluster.local:6379/12"
+  # 벡터 DB = 같은 dify DB 의 pgvector (접속 정보는 Secret dify-db)
+  VECTOR_STORE: "pgvector"
+  PGVECTOR_MAX_CONNECTION: "5"
+  # 파일 = PVC dify-storage (/app/api/storage)
+  STORAGE_TYPE: "opendal"
+  OPENDAL_SCHEME: "fs"
+  OPENDAL_FS_ROOT: "storage"
+  # 내부 서비스
+  CODE_EXECUTION_ENDPOINT: "http://dify-sandbox:8194"
+  SSRF_PROXY_HTTP_URL: "http://dify-ssrf-proxy:3128"
+  SSRF_PROXY_HTTPS_URL: "http://dify-ssrf-proxy:3128"
+  PLUGIN_DAEMON_URL: "http://dify-plugin-daemon:5002"
+  PLUGIN_MAX_PACKAGE_SIZE: "52428800"
+  PLUGIN_DAEMON_TIMEOUT: "600.0"
+  AGENT_BACKEND_BASE_URL: "http://dify-agent-backend:5050"
+  NEXT_PUBLIC_ENABLE_AGENT_V2: "true"
+  ENABLE_COLLABORATION_MODE: "true"

@@ -1,0 +1,174 @@
+# Dify Agent(1.19 새 기능): agent-backend 와 셸 작업 공간 local-sandbox, 그 전용 검문소 agent-ssrf-proxy.
+# local-sandbox 는 api 로 바로 갈 수 없고(networkpolicy.yaml) 검문소를 거쳐 agent-backend /agent-stub/ 과 api /files/ 만 쓴다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dify-agent-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dify-agent-backend
+  template:
+    metadata:
+      labels:
+        app: dify-agent-backend
+    spec:
+      enableServiceLinks: false
+      containers:
+      - name: agent-backend
+        image: langgenius/dify-agent-backend:1.19.0
+        envFrom:
+        - configMapRef:
+            name: dify-config
+        env:
+        - name: DIFY_AGENT_API_TOKEN
+          valueFrom:
+            secretKeyRef: {name: dify-secret, key: DIFY_AGENT_API_TOKEN}
+        - name: DIFY_AGENT_SERVER_SECRET_KEY
+          valueFrom:
+            secretKeyRef: {name: dify-secret, key: DIFY_AGENT_SERVER_SECRET_KEY}
+        - name: DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN
+          valueFrom:
+            secretKeyRef: {name: dify-secret, key: DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN}
+        - {name: DIFY_AGENT_PLUGIN_DAEMON_URL, value: "http://dify-plugin-daemon:5002"}
+        - name: DIFY_AGENT_PLUGIN_DAEMON_API_KEY
+          valueFrom:
+            secretKeyRef: {name: dify-secret, key: PLUGIN_DAEMON_KEY}
+        - {name: DIFY_AGENT_INNER_API_URL, value: "http://dify-api:5001"}
+        - name: DIFY_AGENT_INNER_API_KEY
+          valueFrom:
+            secretKeyRef: {name: dify-secret, key: INNER_API_KEY_FOR_PLUGIN}
+        - {name: DIFY_AGENT_RUNTIME_BACKEND, value: local}
+        - {name: DIFY_AGENT_LOCAL_SANDBOX_ENDPOINT, value: "http://dify-local-sandbox:5004"}
+        - {name: DIFY_AGENT_SANDBOX_FILES_BASE_URL, value: "http://dify-api:5001"}
+        - {name: DIFY_AGENT_STUB_API_BASE_URL, value: "http://dify-agent-backend:5050/agent-stub"}
+        ports:
+        - containerPort: 5050
+        readinessProbe:
+          tcpSocket: {port: 5050}
+          periodSeconds: 15
+        resources:
+          requests: {cpu: 100m, memory: 256Mi}
+          limits: {memory: 1Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dify-agent-backend
+spec:
+  selector:
+    app: dify-agent-backend
+  ports:
+  - port: 5050
+    targetPort: 5050
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dify-local-sandbox
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dify-local-sandbox
+  template:
+    metadata:
+      labels:
+        app: dify-local-sandbox
+    spec:
+      enableServiceLinks: false
+      automountServiceAccountToken: false
+      containers:
+      - name: local-sandbox
+        image: langgenius/dify-agent-local-sandbox:1.19.0
+        command: ["shellctl", "serve", "--listen", "0.0.0.0:5004", "--require-auth-token"]
+        env:
+        - name: SHELLCTL_AUTH_TOKEN
+          valueFrom:
+            secretKeyRef: {name: dify-secret, key: DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN}
+        - {name: HTTP_PROXY, value: "http://dify-agent-ssrf-proxy:3128"}
+        - {name: HTTPS_PROXY, value: "http://dify-agent-ssrf-proxy:3128"}
+        - {name: NO_PROXY, value: "localhost,127.0.0.1"}
+        ports:
+        - containerPort: 5004
+        readinessProbe:
+          httpGet: {path: /healthz, port: 5004}
+          periodSeconds: 30
+        volumeMounts:
+        - {name: home, mountPath: /home/dify}
+        - {name: workspace, mountPath: /workspace}
+        resources:
+          requests: {cpu: 100m, memory: 256Mi}
+          limits: {memory: 2Gi}
+      volumes:   # 셸 작업 공간 = 휘발성(파드가 바뀌면 비워진다)
+      - name: home
+        emptyDir: {sizeLimit: 5Gi}
+      - name: workspace
+        emptyDir: {sizeLimit: 10Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dify-local-sandbox
+spec:
+  selector:
+    app: dify-local-sandbox
+  ports:
+  - port: 5004
+    targetPort: 5004
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dify-agent-ssrf-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dify-agent-ssrf-proxy
+  template:
+    metadata:
+      labels:
+        app: dify-agent-ssrf-proxy
+    spec:
+      enableServiceLinks: false
+      automountServiceAccountToken: false
+      containers:
+      - name: squid
+        image: ubuntu/squid:latest
+        command: ["bash", "/scripts/docker-entrypoint.sh"]
+        env:
+        - {name: HTTP_PORT, value: "3128"}
+        - {name: COREDUMP_DIR, value: /var/spool/squid}
+        - {name: SSRF_PROXY_ALLOW_PRIVATE_IPS, value: ""}
+        - {name: SSRF_PROXY_ALLOW_PRIVATE_DOMAINS, value: ""}
+        ports:
+        - containerPort: 3128
+        readinessProbe:
+          tcpSocket: {port: 3128}
+          periodSeconds: 15
+        volumeMounts:
+        - {name: squid, mountPath: /etc/squid/squid.conf.template, subPath: squid-agent.conf.template}
+        - {name: squid, mountPath: /etc/squid/dify_common.conf.template, subPath: squid-common.conf.template}
+        - {name: squid, mountPath: /scripts/docker-entrypoint.sh, subPath: docker-agent-entrypoint.sh}
+        resources:
+          requests: {cpu: 50m, memory: 64Mi}
+          limits: {memory: 512Mi}
+      volumes:
+      - name: squid
+        configMap:
+          name: dify-squid
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dify-agent-ssrf-proxy
+spec:
+  selector:
+    app: dify-agent-ssrf-proxy
+  ports:
+  - port: 3128
+    targetPort: 3128

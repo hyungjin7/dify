@@ -1,0 +1,14 @@
+# dify-sandbox 설정. key 는 환경 변수 API_KEY(시크릿)가 덮어쓴다.
+app:
+  port: 8194
+  debug: False
+  key: replaced-by-env
+max_workers: 4
+max_requests: 50
+worker_timeout: 15
+enable_network: True
+allowed_syscalls:
+proxy:
+  socks5: ''
+  http: 'http://dify-ssrf-proxy:3128'
+  https: 'http://dify-ssrf-proxy:3128'

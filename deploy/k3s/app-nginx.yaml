@@ -1,0 +1,45 @@
+# 경로 나누기(nginx). Traefik → dify-nginx:80 → api·web·plugin-daemon·api-ws (files/nginx/default.conf)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dify-nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dify-nginx
+  template:
+    metadata:
+      labels:
+        app: dify-nginx
+    spec:
+      enableServiceLinks: false
+      automountServiceAccountToken: false
+      containers:
+      - name: nginx
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 80
+        readinessProbe:
+          httpGet: {path: /nginx-healthz, port: 80}
+          periodSeconds: 15
+        volumeMounts:
+        - {name: conf, mountPath: /etc/nginx/conf.d/default.conf, subPath: default.conf}
+        resources:
+          requests: {cpu: 50m, memory: 32Mi}
+          limits: {memory: 256Mi}
+      volumes:
+      - name: conf
+        configMap:
+          name: dify-nginx
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dify-nginx
+spec:
+  selector:
+    app: dify-nginx
+  ports:
+  - port: 80
+    targetPort: 80

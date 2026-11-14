@@ -1,0 +1,85 @@
+# 1) 들어오는 길: 같은 namespace 와 Traefik(kube-system)만.
+# 2) sandbox(사용자 코드 실행)는 검문소 dify-ssrf-proxy 와 DNS 로만 나간다.
+# 3) local-sandbox(Agent 셸)는 agent-backend 에게서만 받고, 전용 검문소·agent-backend·DNS 로만 나간다.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dify-ingress-same-ns-and-traefik
+spec:
+  podSelector:   # local-sandbox 는 아래 정책만 따른다(정책은 합쳐지므로 여기서 뺀다)
+    matchExpressions:
+    - {key: app, operator: NotIn, values: [dify-local-sandbox]}
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - podSelector: {}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dify-sandbox-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: dify-sandbox
+  policyTypes: [Egress]
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: dify-ssrf-proxy
+    ports:
+    - {protocol: TCP, port: 3128}
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - {protocol: UDP, port: 53}
+    - {protocol: TCP, port: 53}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dify-local-sandbox
+spec:
+  podSelector:
+    matchLabels:
+      app: dify-local-sandbox
+  policyTypes: [Ingress, Egress]
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: dify-agent-backend
+    ports:
+    - {protocol: TCP, port: 5004}
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: dify-agent-ssrf-proxy
+    ports:
+    - {protocol: TCP, port: 3128}
+  - to:
+    - podSelector:
+        matchLabels:
+          app: dify-agent-backend
+    ports:
+    - {protocol: TCP, port: 5050}
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - {protocol: UDP, port: 53}
+    - {protocol: TCP, port: 53}
