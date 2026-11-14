@@ -10,6 +10,7 @@
   3) dify DB 에 CREATE EXTENSION vector (pgvector — 일반 계정은 못 만들어서 여기서 만든다)
   4) Secret dify/dify-db   : DB_HOST·DB_PORT·DB_USERNAME·DB_PASSWORD·DB_DATABASE + PGVECTOR_*
   5) Secret dify/dify-secret: SECRET_KEY·INIT_PASSWORD·DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN 등 내부 키
+  6) 배포: kubectl apply -k deploy/k3s (지금 돌고 있는 우리 이미지 태그는 그대로 둔다)
 다른 DB 는 건드리지 않는다. 되돌리기는 README 참고.
 """
 import base64
@@ -109,5 +110,32 @@ gen = {
 }
 apply_secret("dify-secret", {k: old.get(k) or make() for k, make in gen.items()})
 print("Secret dify-db·dify-secret 준비 완료(값은 출력하지 않음).")
-print("다음: kubectl apply -k deploy/k3s")
+
+# 6) 배포. 손으로 돌린 CI 가 우리 이미지(gitea 레지스트리)로 바꿔 둔 배포는 그 태그를 유지한다.
+import os
+import tempfile
+here = os.path.dirname(os.path.abspath(__file__))
+REG = "gitea.delvrio.com/hyungjin7/dify"
+images = []
+for official, ours, deploy in (("langgenius/dify-api", "api", "dify-api"),
+                               ("langgenius/dify-web", "web", "dify-web"),
+                               ("langgenius/dify-agent-backend", "agent", "dify-agent-backend"),
+                               ("langgenius/dify-agent-local-sandbox", "local-sandbox", "dify-local-sandbox")):
+    try:
+        cur = kubectl(["-n", NS_APP, "get", "deploy", deploy, "-o",
+                       "jsonpath={.spec.template.spec.containers[0].image}"]).strip()
+    except subprocess.CalledProcessError:
+        cur = ""
+    if cur.startswith(f"{REG}/{ours}:"):
+        images.append((official, cur.rsplit(":", 1)))
+with tempfile.TemporaryDirectory() as tmp:
+    base = os.path.relpath(here, tmp)
+    with open(os.path.join(tmp, "kustomization.yaml"), "w") as f:
+        f.write(f"resources:\n- {base}\n")
+        if images:
+            f.write("images:\n")
+            for official, (name, tag) in images:
+                f.write(f"- name: {official}\n  newName: {name}\n  newTag: \"{tag}\"\n")
+                print(f"유지: {official} → {name}:{tag}")
+    print(kubectl(["apply", "-k", tmp]).strip())
 print("첫 관리자 비밀번호 보기: kubectl -n dify get secret dify-secret -o jsonpath='{.data.INIT_PASSWORD}' | base64 -d; echo")
