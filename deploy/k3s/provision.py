@@ -128,14 +128,18 @@ for official, ours, deploy in (("langgenius/dify-api", "api", "dify-api"),
         cur = ""
     if cur.startswith(f"{REG}/{ours}:"):
         images.append((official, cur.rsplit(":", 1)))
-with tempfile.TemporaryDirectory() as tmp:
-    base = os.path.relpath(here, tmp)
+# 임시 kustomization 은 이 폴더 안에 만든다(macOS 의 /var → /private/var 같은 링크 때문에 바깥 상대 경로가 어긋난다).
+with tempfile.TemporaryDirectory(dir=here, prefix=".apply-") as tmp:
     with open(os.path.join(tmp, "kustomization.yaml"), "w") as f:
-        f.write(f"resources:\n- {base}\n")
+        f.write("resources:\n- ..\n")
         if images:
             f.write("images:\n")
             for official, (name, tag) in images:
                 f.write(f"- name: {official}\n  newName: {name}\n  newTag: \"{tag}\"\n")
                 print(f"유지: {official} → {name}:{tag}")
-    print(kubectl(["apply", "-k", tmp]).strip())
+    r = subprocess.run(["kubectl", "apply", "-k", tmp], capture_output=True, text=True)
+    print(r.stdout.strip())
+    if r.returncode:
+        print(r.stderr.strip(), file=sys.stderr)
+        sys.exit(r.returncode)
 print("첫 관리자 비밀번호 보기: kubectl -n dify get secret dify-secret -o jsonpath='{.data.INIT_PASSWORD}' | base64 -d; echo")
