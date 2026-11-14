@@ -51,7 +51,12 @@ bbb 의 RAG(뉴스·YouTube 색인, alpha-98 GPU)를 Dify 에서 두 가지로 �
    - API Key: `kubectl -n bbb-namespace get secret rag-dify-key -o jsonpath='{.data.key}' | base64 -d; echo` (provision.py 가 만든다)
    - 외부 지식 ID: `all` · `news` · `youtube`, 주제로 좁히려면 `news:macro` 처럼(주제 macro·market·industry·company·policy·strategy·other)
    - 색인은 rag 가 계속 만든다. Dify 쪽에 다시 올리지 않는다. 검문소(`dify-ssrf-proxy`)는 rag 주소만 열어 두었다.
-2. **임베딩·리랭커 모델(Dify 에 직접 올리는 문서용)** — 설정 › 모델 공급자 › OpenAI-API-compatible › 모델 추가
+2. **임베딩·리랭커 모델(Dify 에 직접 올리는 문서용)** — 설정 › 모델 공급자 › **Text Embedding Inference** › 모델 추가(권장)
+   - Text Embedding: 모델 `bge-m3`, Server url `http://embed-service.bbb-namespace.svc.cluster.local:8020/tei/bge-m3`
+   - Rerank: 모델 `bge-reranker-v2-m3`, Server url `http://embed-service.bbb-namespace.svc.cluster.local:8020/tei/bge-reranker-v2-m3`
+   - API Key 는 비워도 된다.
+
+   또는 OpenAI-API-compatible › 모델 추가
    - Text Embedding: 모델 `bge-m3`, Base URL `http://embed-service.bbb-namespace.svc.cluster.local:8020/v1`, API Key 빈칸(아무 값), 컨텍스트 1024
    - Rerank: 모델 `bge-reranker-v2-m3`, 같은 Base URL
    - GPU 는 rag 색인과 한 줄로 번갈아 쓴다. 들어올 수 있는 곳은 bbb `app-embed.yaml` NetworkPolicy(dify-plugin-daemon 만).
