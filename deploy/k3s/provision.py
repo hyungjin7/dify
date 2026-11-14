@@ -10,6 +10,7 @@
   3) dify DB 에 CREATE EXTENSION vector (pgvector — 일반 계정은 못 만들어서 여기서 만든다)
   4) Secret dify/dify-db   : DB_HOST·DB_PORT·DB_USERNAME·DB_PASSWORD·DB_DATABASE + PGVECTOR_*
   5) Secret dify/dify-secret: SECRET_KEY·INIT_PASSWORD·DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN 등 내부 키
+     Secret bbb-namespace/rag-dify-key: 우리 RAG 를 Dify 외부 지식으로 부를 키(없을 때만 만들고 rag 재기동)
   6) 배포: kubectl apply -k deploy/k3s (지금 돌고 있는 우리 이미지 태그는 그대로 둔다)
 다른 DB 는 건드리지 않는다. 되돌리기는 README 참고.
 """
@@ -111,6 +112,17 @@ gen = {
 apply_secret("dify-secret", {k: old.get(k) or make() for k, make in gen.items()})
 print("Secret dify-db·dify-secret 준비 완료(값은 출력하지 않음).")
 
+# 5-1) 우리 RAG(뉴스·YouTube 검색)를 Dify 외부 지식으로 쓰는 키. rag 는 bbb-namespace 에 있으므로 Secret 도 거기 둔다.
+RAG_NS, RAG_SECRET = "bbb-namespace", "rag-dify-key"
+raw = kubectl(["-n", RAG_NS, "get", "secret", RAG_SECRET, "--ignore-not-found", "-o", "name"]).strip()
+if not raw:
+    kubectl(["apply", "-f", "-"], input_=json.dumps(
+        {"apiVersion": "v1", "kind": "Secret", "type": "Opaque",
+         "metadata": {"name": RAG_SECRET, "namespace": RAG_NS},
+         "stringData": {"key": secrets.token_urlsafe(32)}}).encode())
+    kubectl(["-n", RAG_NS, "rollout", "restart", "deploy/rag"])   # 키는 기동 때 읽는다
+    print("Secret bbb-namespace/rag-dify-key 를 만들고 rag 를 다시 띄웠습니다.")
+
 # 6) 배포. 손으로 돌린 CI 가 우리 이미지(gitea 레지스트리)로 바꿔 둔 배포는 그 태그를 유지한다.
 import os
 import tempfile
@@ -143,4 +155,5 @@ with tempfile.TemporaryDirectory(dir=os.path.dirname(here), prefix=".apply-") as
     if r.returncode:
         print(r.stderr.strip(), file=sys.stderr)
         sys.exit(r.returncode)
+print("RAG 외부 지식 키 보기: kubectl -n bbb-namespace get secret rag-dify-key -o jsonpath='{.data.key}' | base64 -d; echo")
 print("첫 관리자 비밀번호 보기: kubectl -n dify get secret dify-secret -o jsonpath='{.data.INIT_PASSWORD}' | base64 -d; echo")
