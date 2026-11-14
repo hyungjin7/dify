@@ -38,7 +38,7 @@ spec:
           tcpSocket: {port: 3000}
           periodSeconds: 15
         resources:
-          requests: {cpu: 100m, memory: 256Mi}
+          requests: {cpu: 500m, memory: 512Mi}   # 화면 렌더링이 바쁜 노드에서 밀리지 않게(2026-11-15)
           limits: {memory: 1Gi}
 ---
 apiVersion: v1

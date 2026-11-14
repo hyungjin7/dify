@@ -46,6 +46,10 @@ spec:
         # 유휴 연결이 기본 한도 10개를 채워 화면 요청이 약 10초씩 대기하는 것을 방지한다.
         - name: SERVER_WORKER_CONNECTIONS
           value: "100"
+        # 화면 API 를 프로세스 2개로(기본 1개) — 한 요청이 CPU 를 오래 잡아도 다른 화면 요청이 기다리지 않게(2026-11-15).
+        # DB 연결은 프로세스마다 최대 15개(POOL 10 + OVERFLOW 5) → 30개. prod-pg max_connections 200 안.
+        - name: SERVER_WORKER_AMOUNT
+          value: "2"
         - name: AGENT_BACKEND_API_TOKEN
           valueFrom:
             secretKeyRef: {name: dify-secret, key: DIFY_AGENT_API_TOKEN}
@@ -69,8 +73,9 @@ spec:
         volumeMounts:
         - name: storage
           mountPath: /app/api/storage
+        # CPU 를 넉넉히 예약해 바쁜 노드에서도 밀리지 않게(상한은 두지 않는다)
         resources:
-          requests: {cpu: 200m, memory: 768Mi}
+          requests: {cpu: "1", memory: 1Gi}
           limits: {memory: 3Gi}
       volumes:
       - name: storage
