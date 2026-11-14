@@ -1,0 +1,213 @@
+# Dify 스튜디오 › 앱 만들기 › DSL 파일 가져오기 로 올린다(2026-11-14).
+# 우리 RAG(뉴스·YouTube 색인) 검색 → oMLX gemma 가 답하는 챗플로우.
+# 가져온 뒤: ① 오른쪽 위 ENV 의 rag_api_key 에 키를 넣는다
+#   kubectl -n bbb-namespace get secret rag-dify-key -o jsonpath='{.data.key}' | base64 -d; echo
+# ② LLM 노드의 모델이 비어 있으면 OpenAI-API-compatible 의 gemma 모델을 고른다.
+app:
+  description: 우리 뉴스·YouTube 색인(bbb RAG)에서 찾아 근거와 함께 답하는 예시
+  icon: "\U0001F4F0"
+  icon_background: '#E0F2FE'
+  mode: advanced-chat
+  name: 뉴스·YouTube RAG 챗봇
+  use_icon_as_answer_icon: false
+kind: app
+version: 0.7.0
+workflow:
+  conversation_variables: []
+  environment_variables:
+  - description: bbb RAG 외부 지식 키(Secret bbb-namespace/rag-dify-key)
+    id: 3f1c2a9e-7b4d-4c1e-9a55-2d8e6f0b1c01
+    name: rag_api_key
+    value: ''
+    value_type: secret
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: 뉴스·YouTube 에서 찾아 답해 드립니다. 예) 최근 반도체 수출 전망은?
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions:
+    - 최근 반도체 업황 관련 뉴스 요약해 줘
+    - 금리 인하 전망에 대한 유튜브 의견은?
+    - 2차전지 업종 최근 이슈는?
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        sourceType: start
+        targetType: http-request
+      id: start-search
+      source: 'start'
+      sourceHandle: source
+      target: 'search'
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: llm
+      id: search-llm
+      source: 'search'
+      sourceHandle: source
+      target: 'llm'
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: llm
+        targetType: answer
+      id: llm-answer
+      source: 'llm'
+      sourceHandle: source
+      target: 'answer'
+      targetHandle: target
+      type: custom
+    nodes:
+    - data:
+        desc: '검색 범위: all · news · youtube (주제로 좁히려면 news:macro 처럼)'
+        selected: false
+        title: 시작
+        type: start
+        variables:
+        - default: all
+          label: 검색 범위
+          options:
+          - all
+          - news
+          - youtube
+          - news:macro
+          - news:market
+          - news:industry
+          - news:company
+          required: false
+          type: select
+          variable: scope
+      height: 116
+      id: 'start'
+      position:
+        x: 80
+        y: 280
+      positionAbsolute:
+        x: 80
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config:
+            api_key: '{{#env.rag_api_key#}}'
+            header: ''
+            type: bearer
+          type: api-key
+        body:
+          data:
+          - type: text
+            value: '{"knowledge_id": "{{#start.scope#}}", "query": "{{#sys.query#}}", "retrieval_setting": {"top_k": 6, "score_threshold": 0}}'
+          type: json
+        desc: 우리 RAG 검색(키워드+의미). 클러스터 안 주소라 바깥에 열려 있지 않다.
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 500
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 60
+          max_write_timeout: 10
+        title: RAG 검색
+        type: http-request
+        url: http://rag-service.bbb-namespace.svc.cluster.local:8019/dify/retrieval
+        variables: []
+      height: 130
+      id: 'search'
+      position:
+        x: 384
+        y: 280
+      positionAbsolute:
+        x: 384
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 검색 결과(JSON records)만 근거로 답한다
+        memory:
+          query_prompt_template: '{{#sys.query#}}'
+          role_prefix:
+            assistant: ''
+            user: ''
+          window:
+            enabled: true
+            size: 6
+        model:
+          completion_params:
+            max_tokens: 1500
+            temperature: 0.3
+          mode: chat
+          name: gemma-4-E4B-it-MLX-8bit
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: sys-prompt
+          role: system
+          text: "너는 투자 정보 비서다. 아래 <검색결과> 는 사내 뉴스·YouTube 색인에서 찾은 자료(JSON, records 배열)다.\n규칙:\n- 검색결과에 있는 내용만 근거로 한국어로 답한다. 없는 내용은 지어내지 말고 \"찾은 자료에 없습니다\"라고 말한다.\n- 각 문장 끝에 근거 자료 번호를 [1], [2] 처럼 붙인다(records 순서).\n- 마지막에 '출처' 로 번호·제목·게시일(metadata.published_at)·URL(metadata.url) 을 나열한다.\n- 날짜가 오래된 자료는 오래됐다고 밝힌다.\n\n<검색결과>\n{{#search.body#}}\n</검색결과>"
+        selected: false
+        title: 답변(LLM)
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 98
+      id: 'llm'
+      position:
+        x: 688
+        y: 280
+      positionAbsolute:
+        x: 688
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        answer: '{{#llm.text#}}'
+        desc: ''
+        selected: false
+        title: 답변
+        type: answer
+        variables: []
+      height: 103
+      id: 'answer'
+      position:
+        x: 992
+        y: 280
+      positionAbsolute:
+        x: 992
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.9
