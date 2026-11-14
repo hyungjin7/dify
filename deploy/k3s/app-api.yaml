@@ -1,0 +1,242 @@
+# Dify api(화면·API 서버) · api-ws(협업 웹소켓) · worker(Celery) · beat(예약, 반드시 1개)
+# 같은 이미지, MODE 만 다르다. 마이그레이션은 api 만 한다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dify-api
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: dify-api
+  template:
+    metadata:
+      labels:
+        app: dify-api
+    spec:
+      enableServiceLinks: false
+      initContainers:
+      # 원본 init_permissions 와 같다: 처음 한 번만 1001 소유로 바꾸고 표시 파일을 남긴다.
+      - name: init-permissions
+        image: busybox:1.37
+        command: ["sh", "-c", "[ -f /s/.init_permissions ] || (chown -R 1001:1001 /s && touch /s/.init_permissions)"]
+        volumeMounts:
+        - name: storage
+          mountPath: /s
+      containers:
+      - name: api
+        image: langgenius/dify-api:1.19.0
+        envFrom:
+        - configMapRef:
+            name: dify-config
+        - secretRef:
+            name: dify-db
+        - secretRef:
+            name: dify-secret
+        env:
+        - name: MODE
+          value: "api"
+        - name: AGENT_BACKEND_API_TOKEN
+          valueFrom:
+            secretKeyRef: {name: dify-secret, key: DIFY_AGENT_API_TOKEN}
+        - name: MIGRATION_ENABLED
+          value: "true"
+        ports:
+        - containerPort: 5001
+        startupProbe:   # 처음 기동 때 DB 마이그레이션이 몇 분 걸린다
+          httpGet: {path: /health, port: 5001}
+          periodSeconds: 10
+          failureThreshold: 60
+        readinessProbe:
+          httpGet: {path: /health, port: 5001}
+          periodSeconds: 15
+          timeoutSeconds: 5
+        livenessProbe:
+          httpGet: {path: /health, port: 5001}
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 5
+        volumeMounts:
+        - name: storage
+          mountPath: /app/api/storage
+        resources:
+          requests: {cpu: 200m, memory: 768Mi}
+          limits: {memory: 3Gi}
+      volumes:
+      - name: storage
+        persistentVolumeClaim:
+          claimName: dify-storage
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dify-api
+spec:
+  selector:
+    app: dify-api
+  ports:
+  - port: 5001
+    targetPort: 5001
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dify-api-ws
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: dify-api-ws
+  template:
+    metadata:
+      labels:
+        app: dify-api-ws
+    spec:
+      enableServiceLinks: false
+      containers:
+      - name: api-ws
+        image: langgenius/dify-api:1.19.0
+        # 원본 api_websocket: 협업(동시 편집)용 웹소켓 전용 api
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          export SERVER_WORKER_AMOUNT=1
+          export SERVER_WORKER_CLASS=geventwebsocket.gunicorn.workers.GeventWebSocketWorker
+          export SERVER_WORKER_CONNECTIONS=1000
+          export GUNICORN_TIMEOUT=360
+          exec /bin/bash /entrypoint.sh
+        envFrom:
+        - configMapRef:
+            name: dify-config
+        - secretRef:
+            name: dify-db
+        - secretRef:
+            name: dify-secret
+        env:
+        - name: MODE
+          value: "api"
+        - name: AGENT_BACKEND_API_TOKEN
+          valueFrom:
+            secretKeyRef: {name: dify-secret, key: DIFY_AGENT_API_TOKEN}
+        - name: MIGRATION_ENABLED
+          value: "false"
+        ports:
+        - containerPort: 5001
+        readinessProbe:
+          tcpSocket: {port: 5001}
+          periodSeconds: 15
+        volumeMounts:
+        - name: storage
+          mountPath: /app/api/storage
+        resources:
+          requests: {cpu: 200m, memory: 768Mi}
+          limits: {memory: 3Gi}
+      volumes:
+      - name: storage
+        persistentVolumeClaim:
+          claimName: dify-storage
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dify-api-ws
+spec:
+  selector:
+    app: dify-api-ws
+  ports:
+  - port: 5001
+    targetPort: 5001
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dify-worker
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: dify-worker
+  template:
+    metadata:
+      labels:
+        app: dify-worker
+    spec:
+      enableServiceLinks: false
+      containers:
+      - name: worker
+        image: langgenius/dify-api:1.19.0
+        envFrom:
+        - configMapRef:
+            name: dify-config
+        - secretRef:
+            name: dify-db
+        - secretRef:
+            name: dify-secret
+        env:
+        - name: MODE
+          value: "worker"
+        - name: AGENT_BACKEND_API_TOKEN
+          valueFrom:
+            secretKeyRef: {name: dify-secret, key: DIFY_AGENT_API_TOKEN}
+        - name: MIGRATION_ENABLED
+          value: "false"
+        volumeMounts:
+        - name: storage
+          mountPath: /app/api/storage
+        resources:
+          requests: {cpu: 200m, memory: 768Mi}
+          limits: {memory: 3Gi}
+      volumes:
+      - name: storage
+        persistentVolumeClaim:
+          claimName: dify-storage
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dify-beat
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dify-beat
+  template:
+    metadata:
+      labels:
+        app: dify-beat
+    spec:
+      enableServiceLinks: false
+      containers:
+      - name: beat
+        image: langgenius/dify-api:1.19.0
+        envFrom:
+        - configMapRef:
+            name: dify-config
+        - secretRef:
+            name: dify-db
+        - secretRef:
+            name: dify-secret
+        env:
+        - name: MODE
+          value: "beat"
+        - name: AGENT_BACKEND_API_TOKEN
+          valueFrom:
+            secretKeyRef: {name: dify-secret, key: DIFY_AGENT_API_TOKEN}
+        - name: MIGRATION_ENABLED
+          value: "false"
+        resources:
+          requests: {cpu: 200m, memory: 768Mi}
+          limits: {memory: 3Gi}

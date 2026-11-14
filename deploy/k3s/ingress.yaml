@@ -1,0 +1,26 @@
+# dify.delvrio.com → dify-nginx. 인증서 cert-manager letsencrypt-prod(dify-tls).
+# 로그인은 Dify 자체 계정(사용자 결정). API(/v1)·웹훅(/e/)을 외부 앱이 부르므로 SSO 문지기는 걸지 않는다.
+# DNS: dify.delvrio.com 을 bbb.delvrio.com 과 같은 곳으로(와일드카드면 그대로).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dify-ingress
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: traefik
+  tls:
+  - hosts:
+    - dify.delvrio.com
+    secretName: dify-tls
+  rules:
+  - host: dify.delvrio.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: dify-nginx
+            port:
+              number: 80
