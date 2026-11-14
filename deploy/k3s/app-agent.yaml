@@ -15,6 +15,8 @@ spec:
         app: dify-agent-backend
     spec:
       enableServiceLinks: false
+      imagePullSecrets:   # CI 가 우리 이미지(gitea 레지스트리)로 바꿔 끼울 때 필요
+      - name: gitea-registry-auth
       containers:
       - name: agent-backend
         image: langgenius/dify-agent-backend:1.19.0
@@ -80,6 +82,8 @@ spec:
         app: dify-local-sandbox
     spec:
       enableServiceLinks: false
+      imagePullSecrets:   # CI 가 우리 이미지(gitea 레지스트리)로 바꿔 끼울 때 필요
+      - name: gitea-registry-auth
       automountServiceAccountToken: false
       containers:
       - name: local-sandbox
