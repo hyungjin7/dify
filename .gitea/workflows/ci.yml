@@ -11,10 +11,9 @@ name: dify CI/CD
 # 매니페스트는 공식 이미지(langgenius/*:1.19.0)를 적어 두고, CI 가 kustomize images 로 바꿔 끼운다:
 #   이번에 빌드했으면 :<sha>, 아니면 지금 돌고 있는 우리 이미지 태그, 우리 이미지가 없으면 공식 이미지 그대로.
 # 태그는 되커밋하지 않는다.
+# 2026-11-14 사용자 결정: 자동 실행하지 않는다(소스 동기화만). 배포는 python3 deploy/k3s/provision.py --apply.
+# 고친 소스를 이미지로 만들 때만 Gitea › Actions › Run workflow 로 손으로 돌린다.
 on:
-  push:
-    branches:
-      - main
   # 수동 실행(Run workflow): 입력 build 에 api,web,agent,local-sandbox 중 쉼표로(all = 전부)
   workflow_dispatch:
     inputs:
