@@ -5,7 +5,7 @@ kubectl 되는 곳(맥북)에서:
   cd ~/projects/dify && git pull
   python3 deploy/k3s/samples/install_rag_chat.py                 # Dify 이메일·비밀번호를 묻는다
   python3 deploy/k3s/samples/install_rag_chat.py "반도체 업황 최근 뉴스 요약"   # 질문 바꾸기
-  TOP_K=10 python3 deploy/k3s/samples/install_rag_chat.py               # 가져올 자료 수(3~20, 기본 6)
+  TOP_K=10 python3 deploy/k3s/samples/install_rag_chat.py               # 가져올 자료 수(3~20, 기본 10)
 
 하는 일(다시 돌려도 같은 이름 앱을 덮어쓴다):
   1) RAG 키(Secret bbb-namespace/rag-dify-key)를 kubectl 로 읽어 앱 환경 변수(비밀값)에 넣는다
@@ -140,7 +140,7 @@ if not tok:
 step(7, f"질문: {QUESTION}")
 t0 = time.monotonic()
 st, ans = call("POST", f"{BASE}/v1/chat-messages",
-               {"inputs": {"scope": "all", "top_k": os.getenv("TOP_K", "6")}, "query": QUESTION, "response_mode": "blocking", "user": "install-script"},
+               {"inputs": {"scope": "all", "top_k": os.getenv("TOP_K", "10")}, "query": QUESTION, "response_mode": "blocking", "user": "install-script"},
                token=tok, timeout=600)
 sec = time.monotonic() - t0
 need(st == 200 and isinstance(ans, dict) and ans.get("answer") is not None, f"질문 실패({st}, {sec:.1f}초)", ans)
