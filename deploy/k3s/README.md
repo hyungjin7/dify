@@ -50,7 +50,7 @@ bbb 의 RAG(뉴스·YouTube 색인, alpha-98 GPU)를 Dify 에서 두 가지로 �
 1. **외부 지식(뉴스·YouTube 검색)** — 지식 › 외부 지식 API › 추가
    - Endpoint `http://rag-service.bbb-namespace.svc.cluster.local:8019/dify`
    - API Key: `kubectl -n bbb-namespace get secret rag-dify-key -o jsonpath='{.data.key}' | base64 -d; echo` (provision.py 가 만든다)
-   - 외부 지식 ID: `all` · `news` · `youtube`, 주제로 좁히려면 `news:macro` 처럼(주제 macro·market·industry·company·policy·strategy·other)
+   - 외부 지식 ID: `all` · `news` · `youtube` · `report`(종목 리포트), 주제로 좁히려면 `news:macro` 처럼(주제 macro·market·industry·company·policy·strategy·other)
    - 색인은 rag 가 계속 만든다. Dify 쪽에 다시 올리지 않는다. 검문소(`dify-ssrf-proxy`)는 rag 주소만 열어 두었다.
 2. **임베딩·리랭커 모델(Dify 에 직접 올리는 문서용)** — 설정 › 모델 공급자 › **Text Embedding Inference** › 모델 추가(권장)
    - Text Embedding: 모델 `bge-m3`, Server url `http://embed-service.bbb-namespace.svc.cluster.local:8020/tei/bge-m3`
