@@ -84,7 +84,7 @@ workflow:
       type: custom
     nodes:
     - data:
-        desc: '검색 범위: all · news · youtube · report(종목·산업 리포트), 주제 news:macro, 기간 news:7d (기간 없어도 최근 자료 우선). 가져올 자료 수 3~20(많을수록 느림)'
+        desc: '검색 범위: all · news · youtube · report(종목·산업 리포트), 주제 news:macro, 기간 news:7d (기간 없어도 최근 자료 우선). 가져올 자료 수 3~20(비우면 10, 많을수록 느림)'
         selected: false
         title: 시작
         type: start
@@ -108,7 +108,7 @@ workflow:
           required: false
           type: select
           variable: scope
-        - default: '6'
+        - default: '10'
           label: 가져올 자료 수
           options:
           - '3'
@@ -116,7 +116,7 @@ workflow:
           - '10'
           - '15'
           - '20'
-          required: false   # 비우면 코드 노드가 6건으로 둔다(필수로 두면 대화 중·API 호출에서 'top_k is required' 오류)
+          required: false   # 비우면 코드 노드가 10건으로 둔다(필수로 두면 대화 중·API 호출에서 'top_k is required' 오류)
           type: select
           variable: top_k
       height: 116
@@ -139,9 +139,9 @@ workflow:
           def main(query: str, scope: str, top_k: str) -> dict:
               # 질문을 JSON 글자로 안전하게 바꾼다(줄바꿈·따옴표가 있어도 깨지지 않게)
               try:
-                  k = max(1, min(int(str(top_k or "6").strip()), 20))
+                  k = max(1, min(int(str(top_k or "10").strip()), 20))
               except ValueError:
-                  k = 6
+                  k = 10
               body = {"knowledge_id": (scope or "all").strip() or "all",
                       "query": " ".join(str(query or "").split())[:300],
                       "retrieval_setting": {"top_k": k, "score_threshold": 0}}
