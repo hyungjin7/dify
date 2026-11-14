@@ -112,6 +112,21 @@ gen = {
 apply_secret("dify-secret", {k: old.get(k) or make() for k, make in gen.items()})
 print("Secret dify-db·dify-secret 준비 완료(값은 출력하지 않음).")
 
+# 5-0) 메일: bbb 홈페이지가 쓰는 Gmail(website-mail-secret)을 Dify 에도 쓴다. 없으면 건너뛴다(초대 링크만 표시).
+try:
+    raw = kubectl(["-n", "bbb-namespace", "get", "secret", "website-mail-secret", "-o", "json"])
+    mail = {k: base64.b64decode(v).decode() for k, v in json.loads(raw).get("data", {}).items()}
+except subprocess.CalledProcessError:
+    mail = {}
+if mail.get("EMAIL_HOST_USER") and mail.get("EMAIL_HOST_PASSWORD"):
+    user = mail["EMAIL_HOST_USER"].strip()
+    apply_secret("dify-mail", {"SMTP_USERNAME": user,
+                               "SMTP_PASSWORD": mail["EMAIL_HOST_PASSWORD"].replace(" ", ""),
+                               "MAIL_DEFAULT_SEND_FROM": f"Delve Dify <{user}>"})
+    print("Secret dify-mail 준비 완료(Gmail, 값은 출력하지 않음).")
+else:
+    print("bbb-namespace/website-mail-secret 이 없어 메일 설정을 건너뜁니다(초대는 링크로).")
+
 # 5-1) 우리 RAG(뉴스·YouTube 검색)를 Dify 외부 지식으로 쓰는 키. rag 는 bbb-namespace 에 있으므로 Secret 도 거기 둔다.
 RAG_NS, RAG_SECRET = "bbb-namespace", "rag-dify-key"
 raw = kubectl(["-n", RAG_NS, "get", "secret", RAG_SECRET, "--ignore-not-found", "-o", "name"]).strip()

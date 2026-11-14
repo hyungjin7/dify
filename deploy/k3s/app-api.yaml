@@ -37,6 +37,9 @@ spec:
             name: dify-db
         - secretRef:
             name: dify-secret
+        - secretRef:            # 메일(Gmail SMTP) — provision.py 가 bbb 의 website-mail-secret 에서 만든다
+            name: dify-mail
+            optional: true
         env:
         - name: MODE
           value: "api"
@@ -125,6 +128,9 @@ spec:
             name: dify-db
         - secretRef:
             name: dify-secret
+        - secretRef:            # 메일(Gmail SMTP) — provision.py 가 bbb 의 website-mail-secret 에서 만든다
+            name: dify-mail
+            optional: true
         env:
         - name: MODE
           value: "api"
@@ -191,6 +197,9 @@ spec:
             name: dify-db
         - secretRef:
             name: dify-secret
+        - secretRef:            # 메일(Gmail SMTP) — provision.py 가 bbb 의 website-mail-secret 에서 만든다
+            name: dify-mail
+            optional: true
         env:
         - name: MODE
           value: "worker"
@@ -240,6 +249,9 @@ spec:
             name: dify-db
         - secretRef:
             name: dify-secret
+        - secretRef:            # 메일(Gmail SMTP) — provision.py 가 bbb 의 website-mail-secret 에서 만든다
+            name: dify-mail
+            optional: true
         env:
         - name: MODE
           value: "beat"

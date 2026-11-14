@@ -62,6 +62,10 @@ bbb 의 RAG(뉴스·YouTube 색인, alpha-98 GPU)를 Dify 에서 두 가지로 �
    - Rerank: 모델 `bge-reranker-v2-m3`, 같은 Base URL
    - GPU 는 rag 색인과 한 줄로 번갈아 쓴다. 들어올 수 있는 곳은 bbb `app-embed.yaml` NetworkPolicy(dify-plugin-daemon 만).
 
+## 메일(팀 초대·비밀번호 재설정)
+
+bbb 홈페이지와 같은 Gmail(Secret `bbb-namespace/website-mail-secret`)을 쓴다. `provision.py --apply` 가 Secret `dify/dify-mail`(SMTP_USERNAME·SMTP_PASSWORD·MAIL_DEFAULT_SEND_FROM)을 만들고, 설정은 `config.yaml`(smtp.gmail.com:587 STARTTLS). 바꾼 뒤 `kubectl -n dify rollout restart deploy/dify-api deploy/dify-worker`.
+
 ## 소스 수정 → 배포 (사용자 결정 2026-11-14: 동기화만 자동, 배포는 손으로)
 
 GitHub `hyungjin7/dify` main 은 `.github/workflows/sync-to-gitea.yml` 이 Gitea `hyungjin7/dify` main 으로 **동기화만** 한다. Gitea CI 는 자동으로 돌지 않는다.
