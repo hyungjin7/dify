@@ -1,7 +1,8 @@
 # 뉴스 시간별 요약 워크플로(2026-11-15 사용자 결정: Dify 중심, news 는 중복 제거·기사 저장).
 # 시작(slot) → ego 주요뉴스 목록+링크 → 기사 고르기 → news 중복 확인(앞 시간 요약 제외) → 새 기사만 ego 본문
-#   → news 저장 → 요약할 기사 묶기 → gemma 요약 → 끝(summary·article_ids·new_count·note).
+#   → news 저장 → 요약할 기사 묶기 → gemma 요약 → 결과 정리 → 끝(summary 한 칸: 글 + 끝의 숨김 표시 news-meta).
 # 매일 07~15시 정각에 bbb dworker → news /api/v1/news/hourly-summary/run 이 이 앱을 부르고 결과를 시간별로 저장한다.
+# 이 파일은 /tmp 생성 스크립트가 아니라 손으로 고쳐도 된다.
 # 올리기: SAVE_APP_KEY=news-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/news-hourly-summary-workflow.yml
 app:
   description: 매시 정각 네이버 주요뉴스를 ego 로 읽고, news 로 중복 확인·저장한 뒤 앞 시간과 겹치지 않게 요약
@@ -120,9 +121,19 @@ workflow:
     - data:
         isInIteration: false
         sourceType: llm
-        targetType: end
-      id: llm-end
+        targetType: code
+      id: llm-finish
       source: llm
+      sourceHandle: source
+      target: finish
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: end
+      id: finish-end
+      source: finish
       sourceHandle: source
       target: end
       targetHandle: target
@@ -674,12 +685,29 @@ workflow:
       type: custom
       width: 244
     - data:
-        desc: news 가 받아 시간별로 저장
+        code: |
+          import re
+
+
+          def main(text: str, article_ids: str, new_count: str) -> dict:
+              # 생각(think) 블록이 섞여 나오면 뺀다. 숨김 표시는 화면에 안 보이고 news 가 읽어 기사 연결에 쓴다.
+              body = re.sub(r"<think>.*?</think>", "", text or "", flags=re.S).strip()
+              ids = ",".join(x for x in (article_ids or "").replace(" ", "").split(",") if x.isdigit())
+              return {"result": f"{body}\n\n<!-- news-meta article_ids={ids} new_count={(new_count or '0').strip()} -->"}
+        code_language: python3
+        desc: 요약 글 하나로 내보내고, 쓴 기사 번호는 글 끝 숨김 표시로 news 에 넘긴다
         outputs:
+          result:
+            children: null
+            type: string
+        selected: false
+        title: 결과 정리
+        type: code
+        variables:
         - value_selector:
           - llm
           - text
-          variable: summary
+          variable: text
         - value_selector:
           - merge
           - article_ids
@@ -688,20 +716,35 @@ workflow:
           - merge
           - new_count
           variable: new_count
+      height: 90
+      id: finish
+      position:
+        x: 3080
+        y: 280
+      positionAbsolute:
+        x: 3080
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 요약 한 칸만 내보내 Dify 화면에 글로 보인다. news 가 받아 시간별로 저장
+        outputs:
         - value_selector:
-          - merge
-          - note
-          variable: note
+          - finish
+          - result
+          variable: summary
         selected: false
         title: 끝
         type: end
       height: 90
       id: end
       position:
-        x: 3080
+        x: 3380
         y: 280
       positionAbsolute:
-        x: 3080
+        x: 3380
         y: 280
       sourcePosition: right
       targetPosition: left
