@@ -125,6 +125,8 @@ if existing:
 st, imp = call("POST", "/apps/imports", body)
 if st == 202 and isinstance(imp, dict) and imp.get("status") == "pending":
     st, imp = call("POST", f"/apps/imports/{imp['id']}/confirm", {})
+if isinstance(imp, dict) and "incompatible" in str(imp.get("error") or ""):
+    print("    → 덮어쓸 앱과 DSL 의 앱 종류(챗봇/워크플로)가 다릅니다. 워크플로 앱이면 *-workflow.yml 을, 아니면 APP_ID 없이 새 앱으로 올리세요")
 need(st == 200 and isinstance(imp, dict) and imp.get("app_id"), f"가져오기 실패({st})", imp)
 app_id = imp["app_id"]
 print(f"    → 앱 {app_id}  {BASE}/app/{app_id}/workflow")
@@ -146,13 +148,26 @@ if not tok:
 # 7) 실제 질문
 step(7, f"질문: {QUESTION}")
 t0 = time.monotonic()
-st, ans = call("POST", f"{BASE}/v1/chat-messages",
-               {"inputs": json.loads(os.getenv("INPUTS", "{}")), "query": QUESTION, "response_mode": "blocking", "user": "install-script"},
-               token=tok, timeout=600)
-sec = time.monotonic() - t0
-need(st == 200 and isinstance(ans, dict) and ans.get("answer") is not None, f"질문 실패({st}, {sec:.1f}초)", ans)
-print(f"\n===== 답 ({sec:.1f}초) =====\n{ans['answer']}\n")
-usage = (ans.get("metadata") or {}).get("usage") or {}
-if usage:
-    print(f"토큰: 입력 {usage.get('prompt_tokens')} · 출력 {usage.get('completion_tokens')}")
+inputs = json.loads(os.getenv("INPUTS", "{}"))
+if "\n  mode: workflow" in dsl:
+    # 워크플로 앱: 질문은 시작 입력 request 로 넣고 /v1/workflows/run 의 outputs 를 본다
+    inputs.setdefault("request", QUESTION)
+    st, ans = call("POST", f"{BASE}/v1/workflows/run",
+                   {"inputs": inputs, "response_mode": "blocking", "user": "install-script"}, token=tok, timeout=600)
+    sec = time.monotonic() - t0
+    data = (ans or {}).get("data") or {} if isinstance(ans, dict) else {}
+    need(st == 200 and data.get("status") == "succeeded", f"실행 실패({st}, {sec:.1f}초)", ans)
+    outs = data.get("outputs") or {}
+    print(f"\n===== 결과 ({sec:.1f}초) =====\n" + "\n\n".join(str(v) for v in outs.values()) + "\n")
+    print(f"토큰: {data.get('total_tokens')}")
+else:
+    st, ans = call("POST", f"{BASE}/v1/chat-messages",
+                   {"inputs": inputs, "query": QUESTION, "response_mode": "blocking", "user": "install-script"},
+                   token=tok, timeout=600)
+    sec = time.monotonic() - t0
+    need(st == 200 and isinstance(ans, dict) and ans.get("answer") is not None, f"질문 실패({st}, {sec:.1f}초)", ans)
+    print(f"\n===== 답 ({sec:.1f}초) =====\n{ans['answer']}\n")
+    usage = (ans.get("metadata") or {}).get("usage") or {}
+    if usage:
+        print(f"토큰: 입력 {usage.get('prompt_tokens')} · 출력 {usage.get('completion_tokens')}")
 print(f"앱 화면: {BASE}/app/{app_id}/workflow   대화 기록: {BASE}/app/{app_id}/logs")
