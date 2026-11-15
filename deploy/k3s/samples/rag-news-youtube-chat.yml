@@ -101,6 +101,8 @@ workflow:
           - youtube:30d
           - report
           - report:30d
+          - report_company
+          - report_industry
           - news:macro
           - news:market
           - news:industry
