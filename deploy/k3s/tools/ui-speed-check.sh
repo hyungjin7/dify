@@ -15,6 +15,7 @@ done
 echo
 echo "== 2) 클러스터 안에서 직접 (Traefik 빼고) =="
 kubectl -n $NS run ui-speed-check --rm -i --quiet --restart=Never --image=curlimages/curl:8.11.1 -- sh -c "
+sleep 5   # 새 파드는 NetworkPolicy 허용 목록에 들어가기까지 몇 초 걸린다(바로 부르면 000)
 for u in http://dify-nginx/apps http://dify-web:3000/apps http://dify-api:5001/console/api/system-features http://dify-api:5001/console/api/ping; do
   printf '%-52s ' \$u; curl -s -o /dev/null --compressed -w '$FMT\n' \$u
 done"
@@ -47,6 +48,35 @@ kubectl -n $NS logs deploy/dify-nginx --since=30m 2>/dev/null \
   | sort -rn | head -20
 
 echo
+echo "== 4-2) 최근 30분 응답 상태 개수(오류·웹소켓) =="
+kubectl -n $NS logs deploy/dify-nginx --since=30m 2>/dev/null | grep -E '^[0-9.]+ ' \
+  | awk '{k=$3; if ($5 ~ /socket.io/) k=k" socket.io"; else if ($3 >= 400) k=k" "$5; c[k]++} END {for (k in c) print c[k], k}' | sort -rn | head -15
+
+echo
+echo "== 6) 브라우저가 받는 화면 파일(JS·CSS): 크기 · 압축 · 캐시 · 시간 =="
+html=$(curl -s -L "$URL/signin")
+assets=$(printf '%s' "$html" | grep -oE '/_next/static/[^"'"'"' ]+\.(js|css)' | sort -u)
+n=0; total=0
+for a in $assets; do
+  n=$((n+1))
+  line=$(curl -s -o /dev/null -D - -H 'Accept-Encoding: br, gzip' -w 'TIME=%{time_total} SIZE=%{size_download}' "$URL$a")
+  sz=$(printf '%s' "$line" | grep -oE 'SIZE=[0-9]+' | cut -d= -f2); total=$((total+sz))
+  if [ $n -le 8 ]; then
+    enc=$(printf '%s' "$line" | grep -i '^content-encoding' | tr -d '\r' | cut -d' ' -f2)
+    cc=$(printf '%s' "$line" | grep -i '^cache-control' | tr -d '\r' | cut -d' ' -f2-)
+    t=$(printf '%s' "$line" | grep -oE 'TIME=[0-9.]+' | cut -d= -f2)
+    printf '%-70s %8sB 압축=%-5s 시간=%ss 캐시=%s\n' "${a:0:70}" "$sz" "${enc:-없음}" "$t" "$cc"
+  fi
+done
+echo "로그인 화면 파일 ${n}개, 내려받은 합계 ${total}B"
+printf '%s' "$html" | grep -oE 'https?://[a-zA-Z0-9.-]+' | grep -v 'dify.delvrio.com' | sort | uniq -c | sort -rn | head -10 | sed 's/^/바깥 주소 참조: /'
+
+echo
 echo "== 5) 파드 자원·재시작 =="
 kubectl -n $NS top pods 2>/dev/null
 kubectl -n $NS get pods -o wide
+
+echo
+echo "== 7) api 가 다른 일에 막히는지: ping 20번(채팅 답이 나오는 중에 돌리면 더 정확) =="
+for i in $(seq 20); do curl -s -o /dev/null -w '%{time_total}\n' "$URL/console/api/ping"; done \
+  | sort -n | awk '{a[NR]=$1} END {printf "가장 빠름 %ss · 가운데 %ss · 가장 느림 %ss\n", a[1], a[int(NR/2)], a[NR]}'
