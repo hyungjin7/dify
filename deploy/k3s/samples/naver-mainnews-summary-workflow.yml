@@ -164,7 +164,9 @@ workflow:
           import re
 
           # 기사 주소 모양: 네이버 뉴스(n.news.naver.com/.../article/…), 증권 뉴스 상세(…/news/…/숫자), 옛 news_read
-          ARTICLE = re.compile(r"/article/|news_read|/news/[A-Za-z_]+/\d+|/news/\d+")
+          ARTICLE = re.compile(r"/article/|news_read|/news/[A-Za-z_]+/\d+|/news/\d+|[?&](article_?id|aid|nid)=")
+          # 목록·메뉴 주소(기사 아님)
+          LISTING = re.compile(r"/news/(mainnews|flashnews|ranking|search|list|category)\b|/news/?$|[?&]page=")
 
 
           def main(body: str, status_code: int, count: str) -> dict:
@@ -180,17 +182,23 @@ workflow:
                   detail = page.get("detail") if isinstance(page, dict) else None
                   return {"pages_body": json.dumps({"urls": ["about:blank"]}), "list_text": "", "picked": "0",
                           "note": f"목록 화면을 못 읽었습니다(상태 {status_code}): {str(detail or body)[:300]}"}
-              urls, titles, seen = [], [], set()
-              for l in page.get("links") or []:
-                  href, text = str(l.get("href") or ""), " ".join(str(l.get("text") or "").split())
-                  if len(text) < 10 or not ARTICLE.search(href) or "mainnews" in href:
+              links = page.get("links")
+              cands = []
+              for l in links or []:
+                  href = str(l.get("href") or "").split("#")[0]
+                  text = " ".join(str(l.get("text") or "").split())
+                  if len(text) < 12 or LISTING.search(href):
                       continue
-                  key = href.split("#")[0]
-                  if key in seen:
+                  # 1순위: 기사 주소 모양. 2순위: 주소에 news 가 들어간 제목다운 링크(네이버가 주소 모양을 바꿔도 잡게)
+                  rank = 0 if ARTICLE.search(href) else (1 if "news" in href.lower() else 9)
+                  if rank < 9:
+                      cands.append((rank, href, text))
+              urls, seen = [], set()
+              for rank, href, text in sorted(cands, key=lambda c: c[0]):   # 같은 순위 안에서는 화면 순서 유지
+                  if href in seen:
                       continue
-                  seen.add(key)
-                  urls.append(key)
-                  titles.append(text)
+                  seen.add(href)
+                  urls.append(href)
                   if len(urls) >= n:
                       break
               # 목록 화면 글자(제목·미리보기) — 본문을 못 읽은 기사도 이것으로 보완한다
@@ -201,8 +209,13 @@ workflow:
                       s2.add(ln)
                       lines.append(ln)
               note = page.get("suspect") or ""
-              if not urls:
-                  note += " 기사 링크를 못 찾아 목록 글자만 요약합니다."
+              if links is None:
+                  note += " ego 가 링크 목록을 주지 않았습니다(bbb ego 새 버전 배포 전일 수 있음). 목록 글자만 요약합니다."
+              elif not urls:
+                  sample = " | ".join(str(l.get("href"))[:80] for l in links[:8])
+                  note += f" 링크 {len(links)}개 중 기사 링크를 못 찾아 목록 글자만 요약합니다. 링크 예: {sample}"
+              else:
+                  note += f" 링크 {len(links)}개 중 기사 {len(urls)}개를 엽니다."
               body_json = json.dumps({"urls": urls or ["about:blank"], "wait_until": "domcontentloaded",
                                       "wait_ms": 800, "max_chars": 3000}, ensure_ascii=False)
               return {"pages_body": body_json, "list_text": "\n".join(lines)[:6000], "picked": str(len(urls)),
