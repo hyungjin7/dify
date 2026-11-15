@@ -181,9 +181,65 @@ workflow:
       type: custom
       width: 244
     - data:
-        code: "import json\nimport re\n\nSOURCES = {\"news\": \"news\", \"youtube\": \"youtube\", \"company\": \"report_company\", \"industry\": \"report_industry\"}\n# 질문 낱말로 찾을 곳을 고른다(AI 를 한 번 더 부르지 않아 0초). 아무것도 안 걸리면 4곳 모두.\nRULES = {\n    \"youtube\": r\"유튜브|youtube|영상|채널|방송\",\n    \"news\": r\"뉴스|기사|보도\",\n    \"industry\": r\"산업\\s*분석|산업\\s*(리포트|레포트|보고서)|업황\\s*(리포트|보고서)|섹터\\s*(리포트|보고서)\",\n    \"company\": r\"종목\\s*분석|종목\\s*(리포트|레포트|보고서)|기업\\s*분석|목표\\s*가|투자\\s*의견\",\n}\nREPORT = r\"리포트|레포트|보고서|애널리스트|증권사\"\nPERIODS = [(r\"(\\d{1,3})\\s*일\", None), (r\"일주일|1\\s*주|한\\s*주\", 7), (r\"(\\d{1,2})\\s*주\", \"w\"),\n           (r\"한\\s*달|1\\s*개월|한\\s*개월\", 30), (r\"(\\d{1,2})\\s*개월|(\\d{1,2})\\s*달\", \"m\"),\n           (r\"반\\s*년\", 180), (r\"1\\s*년|일\\s*년|한\\s*해\", 365)]\n\n\ndef _period(q: str) -> str:\n    if not re.search(r\"최근|지난|동안|이내|간\", q):\n        return \"\"\n    for pat, val in PERIODS:\n        m = re.search(pat, q)\n        if not m:\n            continue\n        if val is\
-          \ None:\n            n = int(m.group(1))\n        elif val == \"w\":\n            n = int(m.group(1)) * 7\n        elif val == \"m\":\n            n = int(next(g for g in m.groups() if g)) * 30\n        else:\n            n = val\n        return f\"{max(1, min(n, 3650))}d\"\n    return \"\"\n\n\ndef main(query: str, period: str, per_source: str) -> dict:\n    q = \" \".join(str(query or \"\").split())[:300]\n    low = q.lower()\n    picked = [k for k, pat in RULES.items() if re.search(pat, low)]\n    if re.search(REPORT, low) and not ({\"company\", \"industry\"} & set(picked)):\n        picked += [\"company\", \"industry\"]\n    if not picked:\n        picked = list(SOURCES)\n    try:\n        k = max(1, min(int(str(per_source or \"3\").strip()), 20))\n    except ValueError:\n        k = 3\n    # 고른 곳이 적으면 그만큼 더 많이(4곳×k 를 나눠 갖는다, 최대 20)\n    k = min(20, max(k, (k * 4) // len(picked)))\n    p = str(period or \"\").strip() or _period(q)\n    out = {\"picked\": \",\".join(picked),\
-          \ \"period_used\": p or \"전체\"}\n    for key, kid in SOURCES.items():\n        # 고르지 않은 곳은 빈 질문 → rag 가 곧바로 빈 결과를 돌려준다\n        body = {\"knowledge_id\": f\"{kid}:{p}\" if p else kid, \"query\": q if key in picked else \"\",\n                \"retrieval_setting\": {\"top_k\": k, \"score_threshold\": 0}}\n        out[\"body_\" + key] = json.dumps(body, ensure_ascii=False)\n    return out\n"
+        code: |
+          import json
+          import re
+
+          SOURCES = {"news": "news", "youtube": "youtube", "company": "report_company", "industry": "report_industry"}
+          # 질문 낱말로 찾을 곳을 고른다(AI 를 한 번 더 부르지 않아 0초). 아무것도 안 걸리면 4곳 모두.
+          RULES = {
+              "youtube": r"유튜브|youtube|영상|채널|방송",
+              "news": r"뉴스|기사|보도",
+              "industry": r"산업\s*분석|산업\s*(리포트|레포트|보고서)|업황\s*(리포트|보고서)|섹터\s*(리포트|보고서)",
+              "company": r"종목\s*분석|종목\s*(리포트|레포트|보고서)|기업\s*분석|목표\s*가|투자\s*의견",
+          }
+          REPORT = r"리포트|레포트|보고서|애널리스트|증권사"
+          PERIODS = [(r"(\d{1,3})\s*일", None), (r"일주일|1\s*주|한\s*주", 7), (r"(\d{1,2})\s*주", "w"),
+                     (r"한\s*달|1\s*개월|한\s*개월", 30), (r"(\d{1,2})\s*개월|(\d{1,2})\s*달", "m"),
+                     (r"반\s*년", 180), (r"1\s*년|일\s*년|한\s*해", 365)]
+
+
+          def _period(q: str) -> str:
+              if not re.search(r"최근|지난|동안|이내|간", q):
+                  return ""
+              for pat, val in PERIODS:
+                  m = re.search(pat, q)
+                  if not m:
+                      continue
+                  if val is None:
+                      n = int(m.group(1))
+                  elif val == "w":
+                      n = int(m.group(1)) * 7
+                  elif val == "m":
+                      n = int(next(g for g in m.groups() if g)) * 30
+                  else:
+                      n = val
+                  return f"{max(1, min(n, 3650))}d"
+              return ""
+
+
+          def main(query: str, period: str, per_source: str) -> dict:
+              q = " ".join(str(query or "").split())[:300]
+              low = q.lower()
+              picked = [k for k, pat in RULES.items() if re.search(pat, low)]
+              if re.search(REPORT, low) and not ({"company", "industry"} & set(picked)):
+                  picked += ["company", "industry"]
+              if not picked:
+                  picked = list(SOURCES)
+              try:
+                  k = max(1, min(int(str(per_source or "3").strip()), 20))
+              except ValueError:
+                  k = 3
+              # 고른 곳이 적으면 그만큼 더 많이(4곳×k 를 나눠 갖는다, 최대 20)
+              k = min(20, max(k, (k * 4) // len(picked)))
+              p = str(period or "").strip() or _period(q)
+              out = {"picked": ",".join(picked), "period_used": p or "전체"}
+              for key, kid in SOURCES.items():
+                  # 고르지 않은 곳은 빈 질문 → rag 가 곧바로 빈 결과를 돌려준다
+                  body = {"knowledge_id": f"{kid}:{p}" if p else kid, "query": q if key in picked else "",
+                          "retrieval_setting": {"top_k": k, "score_threshold": 0}}
+                  out["body_" + key] = json.dumps(body, ensure_ascii=False)
+              return out
         code_language: python3
         desc: 질문 낱말로 찾을 곳(뉴스·YouTube·종목분석·산업분석)과 기간(최근 30일 등)을 고르고 검색 요청을 만든다. 안 걸리면 4곳 모두
         outputs:
@@ -414,49 +470,31 @@ workflow:
         prompt_template:
         - id: sys-prompt
           role: system
-          text: '너는 투자 정보 비서다. 아래 네 묶음은 사내 색인에서 같은 질문으로 찾은 자료(JSON, records 배열)다: 뉴스 · YouTube · 종목분석 리포트 · 산업분석 리포트.
-
+          text: |-
+            너는 투자 정보 비서다. 아래 네 묶음은 사내 색인에서 같은 질문으로 찾은 자료(JSON, records 배열)다: 뉴스 · YouTube · 종목분석 리포트 · 산업분석 리포트.
             규칙:
-
             - 검색결과에 있는 내용만 근거로 한국어로 답한다. 없는 내용은 지어내지 말고 "찾은 자료에 없습니다"라고 말한다.
-
             - 이번에 찾은 곳: {{#build.picked#}} (기간: {{#build.period_used#}}). records 가 빈 묶음은 찾지 않은 곳이니 언급하지 않는다.
-
             - 질문과 관계있는 묶음만 쓴다. 답은 출처 묶음별 소제목(뉴스 / YouTube / 종목분석 / 산업분석)으로 나누고, 자료가 없거나 관계없는 묶음은 생략한다.
-
             - 근거는 [뉴스1], [YouTube2], [종목1], [산업3] 처럼 묶음 이름과 records 순서 번호로 문장 끝에 붙인다.
-
             - 각 자료 content 맨 앞 [게시일 … · N일 전] 을 보고 최신 자료를 먼저 쓰고, 오래된 자료는 오래됐다고 밝힌다. 날짜별 정리를 원하면 날짜순으로 쓴다.
-
-            - 마지막에 ''출처'' 로 번호·제목·게시일(metadata.published_at)·URL(metadata.url) 을 나열한다.
-
+            - 마지막에 '출처' 로 번호·제목·게시일(metadata.published_at)·URL(metadata.url) 을 나열한다.
 
             <뉴스>
-
             {{#s_news.body#}}
-
             </뉴스>
 
-
             <YouTube>
-
             {{#s_youtube.body#}}
-
             </YouTube>
 
-
             <종목분석 리포트>
-
             {{#s_company.body#}}
-
             </종목분석 리포트>
 
-
             <산업분석 리포트>
-
             {{#s_industry.body#}}
-
-            </산업분석 리포트>'
+            </산업분석 리포트>
         selected: false
         title: 답변(LLM)
         type: llm
