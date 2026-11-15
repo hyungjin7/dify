@@ -86,7 +86,8 @@ spec:
         - {name: COREDUMP_DIR, value: /var/spool/squid}
         - {name: SSRF_PROXY_ALLOW_PRIVATE_IPS, value: "192.168.219.48/32"}
         # 우리 RAG 외부 지식 창구(Dify 는 외부 지식 API 를 이 검문소로 부른다)
-        - {name: SSRF_PROXY_ALLOW_PRIVATE_DOMAINS, value: "rag-service.bbb-namespace.svc.cluster.local"}
+        # ego(맥북 Ego Lite 렌더링, 2026-11-15 네이버 주요뉴스 요약 앱)도 연다
+        - {name: SSRF_PROXY_ALLOW_PRIVATE_DOMAINS, value: "rag-service.bbb-namespace.svc.cluster.local,ego.bbb-namespace.svc.cluster.local"}
         ports:
         - containerPort: 3128
         readinessProbe:
