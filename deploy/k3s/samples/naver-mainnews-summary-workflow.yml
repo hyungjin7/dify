@@ -1,0 +1,262 @@
+# 네이버 증권 주요뉴스 요약 워크플로(앱 종류 '워크플로'용)(2026-11-15 사용자 요청).
+# 시작 → ego(맥북 Ego Lite, CDP)로 https://stock.naver.com/news/mainnews 렌더링 → 글자 정리(코드) → gemma 요약 → 답.
+# 필요: dify-ssrf-proxy 가 ego.bbb-namespace 를 허용(app-sandbox.yaml), 맥북 Ego Lite 가 켜져 있어야 한다.
+# 올리기: APP_ID=<앱 id> python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/naver-mainnews-summary-workflow.yml ""
+app:
+  description: 네이버 증권 주요뉴스(stock.naver.com/news/mainnews)를 ego(Ego Lite) 로 열어 요약
+  icon: 🗞️
+  icon_background: '#FEF3C7'
+  mode: workflow
+  name: 네이버 주요뉴스 요약(워크플로)
+  use_icon_as_answer_icon: false
+kind: app
+version: 0.7.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        sourceType: start
+        targetType: http-request
+      id: start-fetch
+      source: start
+      sourceHandle: source
+      target: fetch
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: code
+      id: fetch-clean
+      source: fetch
+      sourceHandle: source
+      target: clean
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: llm
+      id: clean-llm
+      source: clean
+      sourceHandle: source
+      target: llm
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: llm
+        targetType: end
+      id: llm-end
+      source: llm
+      sourceHandle: source
+      target: end
+      targetHandle: target
+      type: custom
+    nodes:
+    - data:
+        desc: 요청(비우면 오늘 주요뉴스 전체 요약)
+        selected: false
+        title: 시작
+        type: start
+        variables:
+        - label: 요청
+          max_length: 300
+          options: []
+          required: false
+          type: text-input
+          variable: request
+          default: ''
+      height: 54
+      id: start
+      position:
+        x: 80
+        y: 280
+      positionAbsolute:
+        x: 80
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config: null
+          type: no-auth
+        body:
+          data:
+          - type: text
+            value: '{"url": "https://stock.naver.com/news/mainnews", "wait_until": "networkidle", "wait_ms": 2000}'
+          type: json
+        desc: ego(맥북 Ego Lite)가 자바스크립트까지 그린 화면 글자를 받는다(클러스터 안 주소)
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 1000
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 90
+          max_write_timeout: 10
+        title: 주요뉴스 화면 열기(ego)
+        type: http-request
+        url: http://ego.bbb-namespace.svc.cluster.local:8017/api/v1/ego/page
+        variables: []
+      height: 130
+      id: fetch
+      position:
+        x: 380
+        y: 280
+      positionAbsolute:
+        x: 380
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+
+
+          def main(body: str, status_code: int) -> dict:
+              # ego 가 그린 화면 글자에서 메뉴·광고 줄을 덜어 LLM 이 읽을 분량으로 줄인다
+              try:
+                  page = json.loads(body or "{}")
+              except ValueError:
+                  page = {}
+              if status_code != 200 or not page.get("text"):
+                  detail = page.get("detail") if isinstance(page, dict) else None
+                  return {"text": "", "note": f"화면을 못 읽었습니다(상태 {status_code}): {str(detail or body)[:300]}"}
+              lines, seen = [], set()
+              for ln in str(page["text"]).splitlines():
+                  ln = " ".join(ln.split())
+                  if len(ln) < 8 or ln in seen:      # 짧은 메뉴·버튼 글자, 중복 줄은 뺀다
+                      continue
+                  seen.add(ln)
+                  lines.append(ln)
+              text = "\n".join(lines)[:15000]
+              note = page.get("suspect") or ""
+              return {"text": text, "note": f"{page.get('title') or ''} · {page.get('final_url') or ''} {note}".strip()}
+        code_language: python3
+        desc: 메뉴·중복 줄을 덜고 15,000자까지
+        outputs:
+          text:
+            children: null
+            type: string
+          note:
+            children: null
+            type: string
+        selected: false
+        title: 화면 글자 정리
+        type: code
+        variables:
+        - value_selector:
+          - fetch
+          - body
+          variable: body
+        - value_selector:
+          - fetch
+          - status_code
+          variable: status_code
+      height: 54
+      id: clean
+      position:
+        x: 680
+        y: 280
+      positionAbsolute:
+        x: 680
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 주제별 요약
+        model:
+          completion_params:
+            max_tokens: 2000
+            temperature: 0.3
+          mode: chat
+          name: gemma-4-E4B-it-MLX-8bit
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: sys-prompt
+          role: system
+          text: |-
+            너는 증권 뉴스 편집자다. 아래 <화면> 은 네이버 증권 주요뉴스(stock.naver.com/news/mainnews) 화면의 글자다(메뉴·광고가 섞여 있을 수 있다).
+            규칙:
+            - 화면에 있는 기사만 근거로 한국어로 쓴다. 없는 내용은 지어내지 않는다. 화면이 비었으면 "주요뉴스 화면을 읽지 못했습니다"와 아래 참고를 그대로 알린다.
+            - 형식:
+              1) 오늘 시장 한눈에(3줄)
+              2) 주제별 묶음 — 거시·환율·금리 / 국내 증시 / 해외 증시 / 산업·업종 / 종목 (기사 없는 묶음은 생략). 기사마다 한 줄 요약, 끝에 (언론사·시각)
+              3) 많이 언급된 종목·업종 표(이름 | 언급 수 | 핵심)
+            - 사용자 요청이 비어 있으면 전체를 요약하고, 특정 주제·종목을 말하면 그 내용 위주로 답한다.
+
+            참고: {{#clean.note#}}
+
+            <화면>
+            {{#clean.text#}}
+            </화면>
+        - id: user-prompt
+          role: user
+          text: '{{#start.request#}}'
+        selected: false
+        title: 요약(LLM)
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 98
+      id: llm
+      position:
+        x: 980
+        y: 280
+      positionAbsolute:
+        x: 980
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: ''
+        outputs:
+        - value_selector:
+          - llm
+          - text
+          variable: summary
+        selected: false
+        title: 끝
+        type: end
+      height: 103
+      id: end
+      position:
+        x: 1280
+        y: 280
+      positionAbsolute:
+        x: 1280
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.9
