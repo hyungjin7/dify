@@ -2,6 +2,7 @@
 """Dify 준비(운영자가 kubectl 되는 곳에서 1회). 비밀번호·키는 화면·Git 에 남기지 않는다.
 
   python3 deploy/k3s/provision.py            # 미리보기: CNPG 주 인스턴스·백업·pgvector 확인만
+  python3 deploy/k3s/provision.py --apply --restart   # --restart: 설정이 그대로여도 api·worker 를 다시 띄움
   python3 deploy/k3s/provision.py --apply    # 아래를 만든다(다시 실행해도 안전, 있는 값은 그대로 둔다)
 
 하는 일(모두 추가형):
@@ -170,5 +171,10 @@ with tempfile.TemporaryDirectory(dir=os.path.dirname(here), prefix=".apply-") as
     if r.returncode:
         print(r.stderr.strip(), file=sys.stderr)
         sys.exit(r.returncode)
+    # dify-config 는 envFrom 이라 값만 바뀌면 파드가 다시 뜨지 않는다(새 값은 재시작해야 읽음, 2026-11-15) → 직접 다시 띄운다.
+    if "configmap/dify-config configured" in r.stdout or "--restart" in sys.argv:
+        for d in ("dify-api", "dify-api-ws", "dify-worker", "dify-beat"):
+            kubectl(["-n", NS_APP, "rollout", "restart", f"deploy/{d}"])
+        print("설정이 바뀌어 api·api-ws·worker·beat 를 다시 띄웠습니다.")
 print("RAG 외부 지식 키 보기: kubectl -n bbb-namespace get secret rag-dify-key -o jsonpath='{.data.key}' | base64 -d; echo")
 print("첫 관리자 비밀번호 보기: kubectl -n dify get secret dify-secret -o jsonpath='{.data.INIT_PASSWORD}' | base64 -d; echo")
