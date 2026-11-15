@@ -139,6 +139,17 @@ if not raw:
     kubectl(["-n", RAG_NS, "rollout", "restart", "deploy/rag"])   # 키는 기동 때 읽는다
     print("Secret bbb-namespace/rag-dify-key 를 만들고 rag 를 다시 띄웠습니다.")
 
+# 5-2) bbb news 의 Dify 창구(/dify/news/check·save, 시간별 뉴스 요약) 키. news 도 bbb-namespace 에 있다(2026-11-15).
+NEWS_SECRET = "news-dify-key"
+raw = kubectl(["-n", RAG_NS, "get", "secret", NEWS_SECRET, "--ignore-not-found", "-o", "name"]).strip()
+if not raw:
+    kubectl(["apply", "-f", "-"], input_=json.dumps(
+        {"apiVersion": "v1", "kind": "Secret", "type": "Opaque",
+         "metadata": {"name": NEWS_SECRET, "namespace": RAG_NS},
+         "stringData": {"key": secrets.token_urlsafe(32)}}).encode())
+    kubectl(["-n", RAG_NS, "rollout", "restart", "deploy/news"])   # 키는 기동 때 읽는다
+    print("Secret bbb-namespace/news-dify-key 를 만들고 news 를 다시 띄웠습니다.")
+
 # 6) 배포. 손으로 돌린 CI 가 우리 이미지(gitea 레지스트리)로 바꿔 둔 배포는 그 태그를 유지한다.
 import os
 import tempfile

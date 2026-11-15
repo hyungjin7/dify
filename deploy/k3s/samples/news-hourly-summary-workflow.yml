@@ -1,0 +1,713 @@
+# 뉴스 시간별 요약 워크플로(2026-11-15 사용자 결정: Dify 중심, news 는 중복 제거·기사 저장).
+# 시작(slot) → ego 주요뉴스 목록+링크 → 기사 고르기 → news 중복 확인(앞 시간 요약 제외) → 새 기사만 ego 본문
+#   → news 저장 → 요약할 기사 묶기 → gemma 요약 → 끝(summary·article_ids·new_count·note).
+# 매일 07~15시 정각에 bbb dworker → news /api/v1/news/hourly-summary/run 이 이 앱을 부르고 결과를 시간별로 저장한다.
+# 올리기: SAVE_APP_KEY=news-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/news-hourly-summary-workflow.yml
+app:
+  description: 매시 정각 네이버 주요뉴스를 ego 로 읽고, news 로 중복 확인·저장한 뒤 앞 시간과 겹치지 않게 요약
+  icon: 🗞️
+  icon_background: '#DBEAFE'
+  mode: workflow
+  name: 뉴스 시간별 요약
+  use_icon_as_answer_icon: false
+kind: app
+version: 0.7.0
+workflow:
+  conversation_variables: []
+  environment_variables:
+  - description: bbb news Dify 창구 키(Secret bbb-namespace/news-dify-key)
+    id: 6b0c7d2e-1f3a-4e8b-9c4d-5a6e7f8091a2
+    name: news_api_key
+    value: ''
+    value_type: secret
+  features:
+    file_upload:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        sourceType: start
+        targetType: http-request
+      id: start-fetch
+      source: start
+      sourceHandle: source
+      target: fetch
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: code
+      id: fetch-pick
+      source: fetch
+      sourceHandle: source
+      target: pick
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: pick-check
+      source: pick
+      sourceHandle: source
+      target: check
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: code
+      id: check-plan
+      source: check
+      sourceHandle: source
+      target: plan
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: plan-articles
+      source: plan
+      sourceHandle: source
+      target: articles
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: code
+      id: articles-prep
+      source: articles
+      sourceHandle: source
+      target: prep
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: prep-save
+      source: prep
+      sourceHandle: source
+      target: save
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: code
+      id: save-merge
+      source: save
+      sourceHandle: source
+      target: merge
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: llm
+      id: merge-llm
+      source: merge
+      sourceHandle: source
+      target: llm
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: llm
+        targetType: end
+      id: llm-end
+      source: llm
+      sourceHandle: source
+      target: end
+      targetHandle: target
+      type: custom
+    nodes:
+    - data:
+        desc: 'dworker 가 매시 정각에 slot(예: 2026-11-16 09:00)을 넣어 부른다'
+        selected: false
+        title: 시작
+        type: start
+        variables:
+        - label: 요청
+          max_length: 300
+          options: []
+          required: false
+          type: text-input
+          variable: request
+          default: ''
+        - label: 볼 기사 수
+          max_length: 4
+          options: []
+          required: false
+          type: text-input
+          variable: count
+          default: '20'
+        - label: 시각(KST)
+          max_length: 20
+          options: []
+          required: false
+          type: text-input
+          variable: slot
+          default: ''
+      height: 90
+      id: start
+      position:
+        x: 80
+        y: 280
+      positionAbsolute:
+        x: 80
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config: null
+          type: no-auth
+        body:
+          data:
+          - type: text
+            value: '{"url": "https://stock.naver.com/news/mainnews", "wait_until": "networkidle", "wait_ms": 2000, "include_links": true}'
+          type: json
+        desc: 목록 화면 글자와 링크
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 2000
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 90
+          max_write_timeout: 30
+        title: 주요뉴스 목록 열기(ego)
+        type: http-request
+        url: http://ego.bbb-namespace.svc.cluster.local:8017/api/v1/ego/page
+        variables: []
+      height: 90
+      id: fetch
+      position:
+        x: 380
+        y: 280
+      positionAbsolute:
+        x: 380
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+          import re
+
+          # 기사 주소 모양: 네이버 뉴스(n.news.naver.com/.../article/…) 등
+          ARTICLE = re.compile(r"/article/|news_read|/news/[A-Za-z_]+/\d+|/news/\d+|[?&](article_?id|aid|nid)=")
+          LISTING = re.compile(r"/news/(mainnews|flashnews|ranking|search|list|category)\b|/news/?$|[?&]page=")
+
+
+          def main(body: str, status_code: int, count: str) -> dict:
+              try:
+                  page = json.loads(body or "{}")
+              except ValueError:
+                  page = {}
+              try:
+                  n = max(1, min(40, int(count or 20)))
+              except ValueError:
+                  n = 20
+              if status_code != 200 or not page.get("text"):
+                  return {"check_body": json.dumps({"items": []}), "note": f"목록 화면을 못 읽었습니다(상태 {status_code})"}
+              cands = []
+              for l in page.get("links") or []:
+                  href = str(l.get("href") or "").split("#")[0]
+                  text = " ".join(str(l.get("text") or "").split())
+                  if len(text) < 12 or LISTING.search(href):
+                      continue
+                  rank = 0 if ARTICLE.search(href) else (1 if "news" in href.lower() else 9)
+                  if rank < 9:
+                      cands.append((rank, href, text))
+              items, seen = [], set()
+              for rank, href, text in sorted(cands, key=lambda c: c[0]):
+                  if href in seen:
+                      continue
+                  seen.add(href)
+                  items.append({"url": href, "title": text[:200]})
+                  if len(items) >= n:
+                      break
+              note = f"목록 링크 {len(page.get('links') or [])}개 중 기사 {len(items)}개"
+              return {"check_body": json.dumps({"items": items}, ensure_ascii=False), "note": note}
+        code_language: python3
+        desc: 링크에서 기사 주소 N개
+        outputs:
+          check_body:
+            children: null
+            type: string
+          note:
+            children: null
+            type: string
+        selected: false
+        title: 기사 고르기
+        type: code
+        variables:
+        - value_selector:
+          - fetch
+          - body
+          variable: body
+        - value_selector:
+          - fetch
+          - status_code
+          variable: status_code
+        - value_selector:
+          - start
+          - count
+          variable: count
+      height: 90
+      id: pick
+      position:
+        x: 680
+        y: 280
+      positionAbsolute:
+        x: 680
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config:
+            api_key: '{{#env.news_api_key#}}'
+            header: ''
+            type: bearer
+          type: api-key
+        body:
+          data:
+          - type: text
+            value: '{{#pick.check_body#}}'
+          type: json
+        desc: news 가 기존 기사·앞 시간 요약과 비교
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 2000
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 60
+          max_write_timeout: 30
+        title: 중복 확인(news)
+        type: http-request
+        url: http://news-service.bbb-namespace.svc.cluster.local:8005/dify/news/check
+        variables: []
+      height: 90
+      id: check
+      position:
+        x: 980
+        y: 280
+      positionAbsolute:
+        x: 980
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+
+
+          def main(body: str, status_code: int) -> dict:
+              # news 판정: new(처음) · duplicate(이미 저장) · similar(비슷한 기사) + summarized(앞 시간 요약에 이미 씀) + use(이번에 씀)
+              try:
+                  res = json.loads(body or "{}")
+              except ValueError:
+                  res = {}
+              items = res.get("items") or []
+              fetch = [i["url"] for i in items if i.get("use") and i.get("status") in ("new", "similar") and i.get("url")]
+              reuse = [i for i in items if i.get("use") and i.get("status") == "duplicate" and i.get("stored")]
+              skipped = sum(1 for i in items if not i.get("use"))
+              pages = {"urls": fetch or ["about:blank"], "wait_until": "domcontentloaded", "wait_ms": 800, "max_chars": 3000}
+              note = (f"새 기사 {len(fetch)}건, 저장돼 있던 기사 {len(reuse)}건, 앞 시간과 겹쳐 뺀 기사 {skipped}건"
+                      + ("" if status_code == 200 else f" (news 판정 실패 {status_code}: {str(body)[:200]})"))
+              titles = {i["url"]: i.get("title") or "" for i in items}
+              return {"pages_body": json.dumps(pages), "reuse": json.dumps(reuse, ensure_ascii=False),
+                      "titles": json.dumps(titles, ensure_ascii=False), "note": note}
+        code_language: python3
+        desc: 새 기사만 본문을 연다
+        outputs:
+          pages_body:
+            children: null
+            type: string
+          reuse:
+            children: null
+            type: string
+          titles:
+            children: null
+            type: string
+          note:
+            children: null
+            type: string
+        selected: false
+        title: 열 기사 정하기
+        type: code
+        variables:
+        - value_selector:
+          - check
+          - body
+          variable: body
+        - value_selector:
+          - check
+          - status_code
+          variable: status_code
+      height: 90
+      id: plan
+      position:
+        x: 1280
+        y: 280
+      positionAbsolute:
+        x: 1280
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config: null
+          type: no-auth
+        body:
+          data:
+          - type: text
+            value: '{{#plan.pages_body#}}'
+          type: json
+        desc: 새 기사만 ego 로 연다
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 2000
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 600
+          max_write_timeout: 30
+        title: 기사 본문 열기(ego)
+        type: http-request
+        url: http://ego.bbb-namespace.svc.cluster.local:8017/api/v1/ego/pages
+        variables: []
+      height: 90
+      id: articles
+      position:
+        x: 1580
+        y: 280
+      positionAbsolute:
+        x: 1580
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+
+
+          def main(body: str, titles: str) -> dict:
+              # ego 로 받은 본문 → news 에 저장할 목록
+              try:
+                  res = json.loads(body or "{}")
+              except ValueError:
+                  res = {}
+              try:
+                  tmap = json.loads(titles or "{}")
+              except ValueError:
+                  tmap = {}
+              items, bad = [], 0
+              for it in res.get("items") or []:
+                  url = it.get("url") or ""
+                  if url == "about:blank":
+                      continue
+                  text = (it.get("text") or "").strip()
+                  if it.get("error") or len(text) < 200:
+                      bad += 1
+                      continue
+                  items.append({"url": url, "title": tmap.get(url) or it.get("title") or "", "content": text})
+              return {"save_body": json.dumps({"source": "Naver 주요뉴스", "items": items}, ensure_ascii=False),
+                      "fetched": json.dumps(items, ensure_ascii=False), "bad": str(bad)}
+        code_language: python3
+        desc: 본문 있는 기사만
+        outputs:
+          save_body:
+            children: null
+            type: string
+          fetched:
+            children: null
+            type: string
+          bad:
+            children: null
+            type: string
+        selected: false
+        title: 저장할 기사 정리
+        type: code
+        variables:
+        - value_selector:
+          - articles
+          - body
+          variable: body
+        - value_selector:
+          - plan
+          - titles
+          variable: titles
+      height: 90
+      id: prep
+      position:
+        x: 1880
+        y: 280
+      positionAbsolute:
+        x: 1880
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config:
+            api_key: '{{#env.news_api_key#}}'
+            header: ''
+            type: bearer
+          type: api-key
+        body:
+          data:
+          - type: text
+            value: '{{#prep.save_body#}}'
+          type: json
+        desc: news_articles 에 저장(중복은 news 가 다시 거름)
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 2000
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 120
+          max_write_timeout: 30
+        title: 기사 저장(news)
+        type: http-request
+        url: http://news-service.bbb-namespace.svc.cluster.local:8005/dify/news/save
+        variables: []
+      height: 90
+      id: save
+      position:
+        x: 2180
+        y: 280
+      positionAbsolute:
+        x: 2180
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+
+
+          def main(save_body: str, save_status: int, fetched: str, reuse: str, note: str, bad: str) -> dict:
+              # 요약에 쓸 기사 = 이번에 새로 저장한 기사 + 저장돼 있었지만 앞 시간 요약에 안 쓴 기사. id 는 시간별 요약에 남긴다
+              try:
+                  saved = (json.loads(save_body or "{}") or {}).get("saved") or []
+              except ValueError:
+                  saved = []
+              id_of = {s["url"]: s["id"] for s in saved if s.get("id")}
+              try:
+                  fetched_l = json.loads(fetched or "[]")
+              except ValueError:
+                  fetched_l = []
+              try:
+                  reuse_l = json.loads(reuse or "[]")
+              except ValueError:
+                  reuse_l = []
+              arts = []
+              for f in fetched_l:
+                  if f["url"] in id_of:
+                      arts.append({"id": id_of[f["url"]], "title": f["title"], "url": f["url"], "content": f["content"]})
+              for r in reuse_l:
+                  s = r.get("stored") or {}
+                  if s.get("id"):
+                      arts.append({"id": s["id"], "title": s.get("title") or r.get("title"), "url": s.get("url") or r.get("url"),
+                                   "content": s.get("content") or "", "press": s.get("press")})
+              parts = []
+              for n, a in enumerate(arts, 1):
+                  parts.append(f"[기사{n}] {a['title']}\n주소: {a['url']}\n{(a['content'] or '')[:2500]}")
+              msg = f"{note}. 본문 못 읽음 {bad}건. 요약 대상 {len(arts)}건" + ("" if save_status == 200 else f" (저장 실패 {save_status})")
+              return {"text": "\n\n".join(parts)[:40000], "article_ids": ",".join(str(a["id"]) for a in arts),
+                      "new_count": str(len(id_of)), "note": msg}
+        code_language: python3
+        desc: 새로 저장한 기사 + 앞 시간에 안 쓴 저장 기사
+        outputs:
+          text:
+            children: null
+            type: string
+          article_ids:
+            children: null
+            type: string
+          new_count:
+            children: null
+            type: string
+          note:
+            children: null
+            type: string
+        selected: false
+        title: 요약할 기사 묶기
+        type: code
+        variables:
+        - value_selector:
+          - save
+          - body
+          variable: save_body
+        - value_selector:
+          - save
+          - status_code
+          variable: save_status
+        - value_selector:
+          - prep
+          - fetched
+          variable: fetched
+        - value_selector:
+          - plan
+          - reuse
+          variable: reuse
+        - value_selector:
+          - plan
+          - note
+          variable: note
+        - value_selector:
+          - prep
+          - bad
+          variable: bad
+      height: 90
+      id: merge
+      position:
+        x: 2480
+        y: 280
+      positionAbsolute:
+        x: 2480
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 시간별 요약
+        model:
+          completion_params:
+            max_tokens: 4000
+            temperature: 0.3
+          mode: chat
+          name: gemma-4-E4B-it-MLX-8bit
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: sys-prompt
+          role: system
+          text: |-
+            너는 증권 뉴스 편집자다. 아래 <기사> 는 네이버 증권 주요뉴스 중 {{#start.slot#}} 기준으로 **앞 시간 요약에 아직 안 나온** 기사들의 본문 앞부분이다.
+            규칙:
+            - 맨 위 첫 줄은 "## {{#start.slot#}} 뉴스 요약" 으로 쓴다.
+            - 기사 본문만 근거로 한국어로 쓴다. 없는 내용은 지어내지 않는다. 숫자(지수·환율·금리·주가·실적)는 본문 그대로 옮긴다.
+            - 문장 끝에 근거 [기사N] 을 붙인다. 같은 사건을 다룬 기사는 한 줄로 묶고 근거를 함께 단다.
+            - 형식:
+              1) 이번 시간 한눈에(3줄)
+              2) 주제별 — 거시·환율·금리 / 국내 증시 / 해외 증시 / 산업·업종 / 종목 (기사 없는 묶음은 생략). 항목마다 1~2줄 + [기사N]
+              3) 출처: [기사N] 제목 · 주소
+            - <기사> 가 비었으면 "이번 시간에는 새 주요뉴스가 없습니다." 한 줄과 아래 참고만 쓴다.
+            - 사용자 요청이 있으면 그 주제 위주로 쓴다: {{#start.request#}}
+
+            참고: {{#merge.note#}}
+
+            <기사>
+            {{#merge.text#}}
+            </기사>
+        - id: user-prompt
+          role: user
+          text: '{{#start.slot#}} 주요뉴스 요약'
+        selected: false
+        title: 요약(LLM)
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 90
+      id: llm
+      position:
+        x: 2780
+        y: 280
+      positionAbsolute:
+        x: 2780
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: news 가 받아 시간별로 저장
+        outputs:
+        - value_selector:
+          - llm
+          - text
+          variable: summary
+        - value_selector:
+          - merge
+          - article_ids
+          variable: article_ids
+        - value_selector:
+          - merge
+          - new_count
+          variable: new_count
+        - value_selector:
+          - merge
+          - note
+          variable: note
+        selected: false
+        title: 끝
+        type: end
+      height: 90
+      id: end
+      position:
+        x: 3080
+        y: 280
+      positionAbsolute:
+        x: 3080
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.6

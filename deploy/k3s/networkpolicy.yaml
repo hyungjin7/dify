@@ -83,3 +83,24 @@ spec:
     ports:
     - {protocol: UDP, port: 53}
     - {protocol: TCP, port: 53}
+---
+# 4) bbb news(시간별 뉴스 요약, 2026-11-15)가 Dify 워크플로 API(dify-api:5001 /v1/workflows/run)를 부른다.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dify-api-from-bbb-news
+spec:
+  podSelector:
+    matchLabels:
+      app: dify-api
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: bbb-namespace
+      podSelector:
+        matchLabels:
+          app: bbb-news
+    ports:
+    - {protocol: TCP, port: 5001}

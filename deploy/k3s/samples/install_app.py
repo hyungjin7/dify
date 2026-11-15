@@ -6,9 +6,10 @@ kubectl 되는 곳(맥북)에서:
   python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/naver-mainnews-summary.yml "오늘 주요뉴스 요약"
   APP_ID=<앱 id> python3 deploy/k3s/samples/install_app.py <앱.yml>      # 화면 주소 /app/<id>/workflow 의 앱을 덮어쓰기
   INPUTS='{"period": "30d"}' python3 deploy/k3s/samples/install_app.py <앱.yml> "질문"   # 시작 입력값
+  SAVE_APP_KEY=news-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/news-hourly-summary-workflow.yml  # 앱 키를 bbb Secret 으로
 
 하는 일(다시 돌려도 같은 이름 앱을 덮어쓴다):
-  1) DSL 에 rag_api_key 가 있으면 RAG 키(Secret bbb-namespace/rag-dify-key)를 kubectl 로 읽어 넣는다
+  1) DSL 이 rag_api_key·news_api_key 를 쓰면 그 키(Secret bbb-namespace/rag-dify-key·news-dify-key)를 kubectl 로 읽어 넣는다
   2) LLM 은 OpenAI-API-compatible 에 등록된 모델 중 gemma(없으면 첫 모델)를 쓴다
   3) 가져오기 → 게시 → 앱 API 키(없으면 만든다) → /v1/chat-messages 로 질문, 답과 걸린 시간을 출력
 비밀번호·키는 화면에 찍지 않는다. 표준 라이브러리만 쓴다.
@@ -76,19 +77,23 @@ def step(n, msg):
     print(f"[{n}] {msg}", flush=True)
 
 
-# 1) RAG 키
-step(1, "RAG 키 읽기(kubectl, DSL 에 rag_api_key 가 있을 때만)")
-rag_key = ""
-try:
-    if "rag_api_key" not in open(DSL, encoding="utf-8").read():
-        raise StopIteration
-    key = subprocess.run(["kubectl", "-n", "bbb-namespace", "get", "secret", "rag-dify-key",
-                          "-o", "jsonpath={.data.key}"], check=True, capture_output=True, text=True).stdout
-    rag_key = base64.b64decode(key).decode()
-except StopIteration:
+# 1) DSL 이 쓰는 bbb 창구 키(환경 변수 이름 → Secret). 있는 것만 kubectl 로 읽는다.
+SECRET_OF = {"rag_api_key": "rag-dify-key", "news_api_key": "news-dify-key"}
+step(1, "bbb 창구 키 읽기(kubectl, DSL 이 쓰는 것만)")
+env_keys = {}
+_dsl_text = open(DSL, encoding="utf-8").read()
+for var, sec in SECRET_OF.items():
+    if f"name: {var}" not in _dsl_text:
+        continue
+    try:
+        key = subprocess.run(["kubectl", "-n", "bbb-namespace", "get", "secret", sec,
+                              "-o", "jsonpath={.data.key}"], check=True, capture_output=True, text=True).stdout
+        env_keys[var] = base64.b64decode(key).decode()
+        print(f"    → {var} ← Secret {sec}")
+    except Exception as e:  # noqa: BLE001
+        need(False, f"{sec} 를 못 읽었습니다. 먼저 python3 deploy/k3s/provision.py --apply", str(e))
+if not env_keys:
     print("    → 필요 없음")
-except Exception as e:  # noqa: BLE001
-    need(False, "rag-dify-key 를 못 읽었습니다. 먼저 python3 deploy/k3s/provision.py --apply", str(e))
 
 # 2) 로그인
 email = os.getenv("DIFY_EMAIL") or input("Dify 이메일: ").strip()
@@ -112,7 +117,8 @@ print(f"    → {pick[0]} / {pick[1]}")
 # 4) DSL 채우기(키·모델) 후 가져오기(같은 이름 앱이 있으면 덮어쓰기)
 step(4, "앱 가져오기")
 dsl = open(DSL, encoding="utf-8").read()
-dsl = dsl.replace("    value: ''\n    value_type: secret", f"    value: {json.dumps(rag_key)}\n    value_type: secret", 1)
+for var, val in env_keys.items():   # 환경 변수(비밀) 값 채우기: "name: <var>" 다음의 빈 value
+    dsl = dsl.replace(f"    name: {var}\n    value: ''\n", f"    name: {var}\n    value: {json.dumps(val)}\n", 1)
 dsl = dsl.replace("name: gemma-4-E4B-it-MLX-8bit", f"name: {json.dumps(pick[1])}", 1)
 dsl = dsl.replace("provider: langgenius/openai_api_compatible/openai_api_compatible", f"provider: {json.dumps(pick[0])}", 1)
 st, apps = call("GET", "/apps?page=1&limit=100&name=" + urllib.request.quote(APP_NAME))
@@ -145,6 +151,15 @@ if not tok:
     need(st in (200, 201) and isinstance(k, dict) and k.get("token"), f"API 키 만들기 실패({st})", k)
     tok = k["token"]
 
+# 6-1) 앱 키를 bbb 가 쓰게 Secret 으로 저장(SAVE_APP_KEY=<Secret 이름>, 예: news-dify-app → news 가 이 앱을 부른다)
+save_as = os.getenv("SAVE_APP_KEY", "").strip()
+if save_as:
+    subprocess.run(["kubectl", "apply", "-f", "-"], check=True, capture_output=True, input=json.dumps(
+        {"apiVersion": "v1", "kind": "Secret", "type": "Opaque",
+         "metadata": {"name": save_as, "namespace": "bbb-namespace"}, "stringData": {"key": tok}}).encode())
+    subprocess.run(["kubectl", "-n", "bbb-namespace", "rollout", "restart", "deploy/news"], check=True, capture_output=True)
+    print(f"    → 앱 키를 Secret bbb-namespace/{save_as} 에 저장하고 news 를 다시 띄웠습니다")
+
 # 7) 실제 질문
 step(7, f"질문: {QUESTION}")
 t0 = time.monotonic()
@@ -152,6 +167,9 @@ inputs = json.loads(os.getenv("INPUTS", "{}"))
 if "\n  mode: workflow" in dsl:
     # 워크플로 앱: 질문은 시작 입력 request 로 넣고 /v1/workflows/run 의 outputs 를 본다
     inputs.setdefault("request", QUESTION)
+    if "variable: slot" in dsl:     # 시간별 요약: 지금 KST 정각
+        from datetime import datetime, timedelta, timezone
+        inputs.setdefault("slot", (datetime.now(timezone(timedelta(hours=9)))).strftime("%Y-%m-%d %H:00"))
     st, ans = call("POST", f"{BASE}/v1/workflows/run",
                    {"inputs": inputs, "response_mode": "blocking", "user": "install-script"}, token=tok, timeout=600)
     sec = time.monotonic() - t0
