@@ -20,10 +20,12 @@ spec:
       initContainers:
       - name: init-permissions
         image: busybox:1.37
-        command: ["sh", "-c", "[ -f /s/.init_permissions ] || (chown -R 1001:1001 /s && touch /s/.init_permissions)"]
+        command: ["sh", "-c", "([ -f /s/.init_permissions ] || (chown -R 1001:1001 /s && touch /s/.init_permissions)) && chown 1001:1001 /c"]
         volumeMounts:
         - name: storage
           mountPath: /s
+        - name: cwd
+          mountPath: /c
       containers:
       - name: plugin-daemon
         image: langgenius/dify-plugin-daemon:0.6.14-local
@@ -50,7 +52,10 @@ spec:
         - {name: PLUGIN_REMOTE_INSTALLING_PORT, value: "5003"}
         - {name: PLUGIN_STORAGE_TYPE, value: local}
         - {name: PLUGIN_STORAGE_LOCAL_ROOT, value: /app/storage}
-        - {name: PLUGIN_WORKING_PATH, value: /app/storage/cwd}
+        # 실행 폴더(압축 푼 플러그인 + 파이썬 가상환경, 작은 파일 수만 개)는 노드 디스크(emptyDir).
+        # NFS(HDD)에 두면 설치·기동이 몇 분씩 걸린다(2026-11-15). 원본 패키지는 NFS(plugin·plugin_packages)에 남아,
+        # 파드가 다시 뜨면 데몬이 거기서 이 폴더를 다시 만든다(그동안 1~3분 플러그인 사용 불가).
+        - {name: PLUGIN_WORKING_PATH, value: /app/cwd}
         - {name: PLUGIN_INSTALLED_PATH, value: plugin}
         - {name: PLUGIN_MEDIA_CACHE_PATH, value: assets}
         - {name: PLUGIN_PACKAGE_CACHE_PATH, value: plugin_packages}
@@ -71,6 +76,8 @@ spec:
           mountPath: /app/storage
         - name: tmp
           mountPath: /tmp
+        - name: cwd
+          mountPath: /app/cwd
         resources:
           requests: {cpu: 200m, memory: 512Mi}
           limits: {memory: 3Gi}
@@ -80,6 +87,8 @@ spec:
           claimName: dify-plugin-storage
       - name: tmp
         emptyDir: {sizeLimit: 5Gi}
+      - name: cwd
+        emptyDir: {sizeLimit: 20Gi}
 ---
 apiVersion: v1
 kind: Service
