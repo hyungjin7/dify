@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""뉴스·YouTube RAG 챗봇을 Dify 에 올리고(가져오기·키 넣기·게시) 실제로 한 번 질문해 결과를 보여 준다.
+"""뉴스·YouTube·종목분석·산업분석 RAG 챗봇을 Dify 에 올리고(가져오기·키 넣기·게시) 실제로 한 번 질문해 결과를 보여 준다.
 
 kubectl 되는 곳(맥북)에서:
   cd ~/projects/dify && git pull
   python3 deploy/k3s/samples/install_rag_chat.py                 # Dify 이메일·비밀번호를 묻는다
   python3 deploy/k3s/samples/install_rag_chat.py "반도체 업황 최근 뉴스 요약"   # 질문 바꾸기
-  TOP_K=10 python3 deploy/k3s/samples/install_rag_chat.py               # 가져올 자료 수(3~20, 기본 10)
+  APP_ID=<앱 id> python3 deploy/k3s/samples/install_rag_chat.py         # 화면 주소 /app/<id>/workflow 의 앱을 덮어쓰기
+  PERIOD=30d PER_SOURCE=3 python3 deploy/k3s/samples/install_rag_chat.py  # 시험 질문의 기간·출처별 자료 수
 
 하는 일(다시 돌려도 같은 이름 앱을 덮어쓴다):
   1) RAG 키(Secret bbb-namespace/rag-dify-key)를 kubectl 로 읽어 앱 환경 변수(비밀값)에 넣는다
@@ -111,6 +112,7 @@ dsl = dsl.replace("name: gemma-4-E4B-it-MLX-8bit", f"name: {json.dumps(pick[1])}
 dsl = dsl.replace("provider: langgenius/openai_api_compatible/openai_api_compatible", f"provider: {json.dumps(pick[0])}", 1)
 st, apps = call("GET", "/apps?page=1&limit=100&name=" + urllib.request.quote(APP_NAME))
 existing = next((a["id"] for a in (apps or {}).get("data", []) if a.get("name") == APP_NAME), None) if st == 200 else None
+existing = os.getenv("APP_ID") or existing   # 화면 주소 /app/<id>/workflow 의 id 를 주면 그 앱을 덮어쓴다
 body = {"mode": "yaml-content", "yaml_content": dsl}
 if existing:
     body["app_id"] = existing
@@ -140,7 +142,7 @@ if not tok:
 step(7, f"질문: {QUESTION}")
 t0 = time.monotonic()
 st, ans = call("POST", f"{BASE}/v1/chat-messages",
-               {"inputs": {"scope": "all", "top_k": os.getenv("TOP_K", "10")}, "query": QUESTION, "response_mode": "blocking", "user": "install-script"},
+               {"inputs": {"period": os.getenv("PERIOD", ""), "per_source": os.getenv("PER_SOURCE", "3")}, "query": QUESTION, "response_mode": "blocking", "user": "install-script"},
                token=tok, timeout=600)
 sec = time.monotonic() - t0
 need(st == 200 and isinstance(ans, dict) and ans.get("answer") is not None, f"질문 실패({st}, {sec:.1f}초)", ans)
