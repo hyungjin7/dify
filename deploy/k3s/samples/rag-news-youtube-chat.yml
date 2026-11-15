@@ -1,11 +1,11 @@
 # Dify 스튜디오 › 앱 만들기 › DSL 파일 가져오기 로 올린다(2026-11-14).
-# 우리 RAG(뉴스·YouTube 색인) 검색 → oMLX gemma 가 답하는 챗플로우.
+# 우리 RAG 4곳(뉴스·YouTube·종목분석·산업분석)을 동시에 검색 → oMLX gemma 가 출처별로 답하는 챗플로우(2026-11-15).
 # 가져온 뒤: ① 오른쪽 위 ENV 의 rag_api_key 에 키를 넣는다
 #   kubectl -n bbb-namespace get secret rag-dify-key -o jsonpath='{.data.key}' | base64 -d; echo
 # ② LLM 노드의 모델이 비어 있으면 OpenAI-API-compatible 의 gemma 모델을 고른다.
 app:
-  description: 우리 뉴스·YouTube·종목 리포트 색인(bbb RAG)에서 찾아 근거와 함께 답하는 예시
-  icon: "\U0001F4F0"
+  description: 뉴스·YouTube·종목분석·산업분석 4곳을 동시에 찾아 출처별로 답하는 챗봇(bbb RAG)
+  icon: 📰
   icon_background: '#E0F2FE'
   mode: advanced-chat
   name: 뉴스·YouTube RAG 챗봇
@@ -23,7 +23,7 @@ workflow:
   features:
     file_upload:
       enabled: false
-    opening_statement: 뉴스·YouTube·종목 리포트에서 찾아 답해 드립니다. 예) 최근 반도체 수출 전망은?
+    opening_statement: 뉴스·YouTube·종목분석·산업분석 리포트를 함께 찾아 출처별로 답해 드립니다. 예) 반도체 업황 최근 흐름은?
     retriever_resource:
       enabled: false
     sensitive_word_avoidance:
@@ -47,29 +47,89 @@ workflow:
         sourceType: start
         targetType: code
       id: start-build
-      source: 'start'
+      source: start
       sourceHandle: source
-      target: 'build'
+      target: build
       targetHandle: target
       type: custom
     - data:
         isInIteration: false
         sourceType: code
         targetType: http-request
-      id: build-search
-      source: 'build'
+      id: build-s_news
+      source: build
       sourceHandle: source
-      target: 'search'
+      target: s_news
       targetHandle: target
       type: custom
     - data:
         isInIteration: false
         sourceType: http-request
         targetType: llm
-      id: search-llm
-      source: 'search'
+      id: s_news-llm
+      source: s_news
       sourceHandle: source
-      target: 'llm'
+      target: llm
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: build-s_youtube
+      source: build
+      sourceHandle: source
+      target: s_youtube
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: llm
+      id: s_youtube-llm
+      source: s_youtube
+      sourceHandle: source
+      target: llm
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: build-s_company
+      source: build
+      sourceHandle: source
+      target: s_company
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: llm
+      id: s_company-llm
+      source: s_company
+      sourceHandle: source
+      target: llm
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: build-s_industry
+      source: build
+      sourceHandle: source
+      target: s_industry
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: llm
+      id: s_industry-llm
+      source: s_industry
+      sourceHandle: source
+      target: llm
       targetHandle: target
       type: custom
     - data:
@@ -77,81 +137,64 @@ workflow:
         sourceType: llm
         targetType: answer
       id: llm-answer
-      source: 'llm'
+      source: llm
       sourceHandle: source
-      target: 'answer'
+      target: answer
       targetHandle: target
       type: custom
     nodes:
     - data:
-        desc: '검색 범위: all · news · youtube · report(종목·산업 리포트), 주제 news:macro, 기간 news:7d (기간 없어도 최근 자료 우선). 가져올 자료 수 3~20(비우면 10, 많을수록 느림)'
+        desc: 뉴스·YouTube·종목분석·산업분석 4곳을 동시에 찾는다. 기간을 고르면 그 기간만(비우면 전체 기간, 최근 자료 우선). 출처별 자료 수(비우면 3)
         selected: false
         title: 시작
         type: start
         variables:
-        - default: all
-          label: 검색 범위
+        - default: ''
+          label: 기간
           options:
-          - all
-          - all:7d
-          - all:30d
-          - news
-          - news:7d
-          - youtube
-          - youtube:30d
-          - report
-          - report:30d
-          - report_company
-          - report_industry
-          - news:macro
-          - news:market
-          - news:industry
-          - news:company
+          - 7d
+          - 30d
+          - 90d
+          - 365d
           required: false
           type: select
-          variable: scope
-        - default: '10'
-          label: 가져올 자료 수
+          variable: period
+        - default: '3'
+          label: 출처별 자료 수
           options:
+          - '2'
           - '3'
-          - '6'
-          - '10'
-          - '15'
-          - '20'
-          required: false   # 비우면 코드 노드가 10건으로 둔다(필수로 두면 대화 중·API 호출에서 'top_k is required' 오류)
+          - '4'
+          - '5'
+          - '8'
+          required: false
           type: select
-          variable: top_k
+          variable: per_source
       height: 116
-      id: 'start'
-      position:
+      id: start
+      position: &id001
         x: 80
         y: 280
-      positionAbsolute:
-        x: 80
-        y: 280
+      positionAbsolute: *id001
       sourcePosition: right
       targetPosition: left
       type: custom
       width: 244
     - data:
-        code: |
-          import json
-
-
-          def main(query: str, scope: str, top_k: str) -> dict:
-              # 질문을 JSON 글자로 안전하게 바꾼다(줄바꿈·따옴표가 있어도 깨지지 않게)
-              try:
-                  k = max(1, min(int(str(top_k or "10").strip()), 20))
-              except ValueError:
-                  k = 10
-              body = {"knowledge_id": (scope or "all").strip() or "all",
-                      "query": " ".join(str(query or "").split())[:300],
-                      "retrieval_setting": {"top_k": k, "score_threshold": 0}}
-              return {"body": json.dumps(body, ensure_ascii=False)}
+        code: "import json\n\nSOURCES = {\"news\": \"news\", \"youtube\": \"youtube\", \"company\": \"report_company\", \"industry\": \"report_industry\"}\n\n\ndef main(query: str, period: str, per_source: str) -> dict:\n    # 4곳에 보낼 검색 요청(JSON)을 만든다. 질문에 줄바꿈·따옴표가 있어도 깨지지 않게 json.dumps 로.\n    try:\n        k = max(1, min(int(str(per_source or \"3\").strip()), 20))\n    except ValueError:\n        k = 3\n    p = str(period or \"\").strip()\n    q = \" \".join(str(query or \"\").split())[:300]\n    out = {}\n    for key, kid in SOURCES.items():\n        body = {\"knowledge_id\": f\"{kid}:{p}\" if p else kid, \"query\": q,\n                \"retrieval_setting\": {\"top_k\": k, \"score_threshold\": 0}}\n        out[\"body_\" + key] = json.dumps(body, ensure_ascii=False)\n    return out\n"
         code_language: python3
-        desc: 질문·범위·자료 수를 검색 요청(JSON)으로 만든다
+        desc: 질문·기간·자료 수로 4곳 검색 요청(JSON)을 만든다
         outputs:
-          body:
+          body_news:
+            children: null
+            type: string
+          body_youtube:
+            children: null
+            type: string
+          body_company:
+            children: null
+            type: string
+          body_industry:
             children: null
             type: string
         selected: false
@@ -164,20 +207,18 @@ workflow:
           variable: query
         - value_selector:
           - start
-          - scope
-          variable: scope
+          - period
+          variable: period
         - value_selector:
           - start
-          - top_k
-          variable: top_k
+          - per_source
+          variable: per_source
       height: 54
-      id: 'build'
-      position:
-        x: 232
-        y: 420
-      positionAbsolute:
-        x: 232
-        y: 420
+      id: build
+      position: &id002
+        x: 380
+        y: 280
+      positionAbsolute: *id002
       sourcePosition: right
       targetPosition: left
       type: custom
@@ -192,9 +233,9 @@ workflow:
         body:
           data:
           - type: text
-            value: '{{#build.body#}}'
+            value: '{{#build.body_news#}}'
           type: json
-        desc: 우리 RAG 검색(키워드+의미). 클러스터 안 주소라 바깥에 열려 있지 않다.
+        desc: rag 외부 지식 news
         headers: Content-Type:application/json
         method: post
         params: ''
@@ -208,18 +249,136 @@ workflow:
           max_connect_timeout: 10
           max_read_timeout: 60
           max_write_timeout: 10
-        title: RAG 검색
+        title: 뉴스 검색
         type: http-request
         url: http://rag-service.bbb-namespace.svc.cluster.local:8019/dify/retrieval
         variables: []
       height: 130
-      id: 'search'
-      position:
-        x: 384
-        y: 280
-      positionAbsolute:
-        x: 384
-        y: 280
+      id: s_news
+      position: &id003
+        x: 680
+        y: 80
+      positionAbsolute: *id003
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config:
+            api_key: '{{#env.rag_api_key#}}'
+            header: ''
+            type: bearer
+          type: api-key
+        body:
+          data:
+          - type: text
+            value: '{{#build.body_youtube#}}'
+          type: json
+        desc: rag 외부 지식 youtube
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 500
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 60
+          max_write_timeout: 10
+        title: YouTube 검색
+        type: http-request
+        url: http://rag-service.bbb-namespace.svc.cluster.local:8019/dify/retrieval
+        variables: []
+      height: 130
+      id: s_youtube
+      position: &id004
+        x: 680
+        y: 250
+      positionAbsolute: *id004
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config:
+            api_key: '{{#env.rag_api_key#}}'
+            header: ''
+            type: bearer
+          type: api-key
+        body:
+          data:
+          - type: text
+            value: '{{#build.body_company#}}'
+          type: json
+        desc: rag 외부 지식 report_company
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 500
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 60
+          max_write_timeout: 10
+        title: 종목분석 리포트 검색
+        type: http-request
+        url: http://rag-service.bbb-namespace.svc.cluster.local:8019/dify/retrieval
+        variables: []
+      height: 130
+      id: s_company
+      position: &id005
+        x: 680
+        y: 420
+      positionAbsolute: *id005
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config:
+            api_key: '{{#env.rag_api_key#}}'
+            header: ''
+            type: bearer
+          type: api-key
+        body:
+          data:
+          - type: text
+            value: '{{#build.body_industry#}}'
+          type: json
+        desc: rag 외부 지식 report_industry
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 500
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 60
+          max_write_timeout: 10
+        title: 산업분석 리포트 검색
+        type: http-request
+        url: http://rag-service.bbb-namespace.svc.cluster.local:8019/dify/retrieval
+        variables: []
+      height: 130
+      id: s_industry
+      position: &id006
+        x: 680
+        y: 590
+      positionAbsolute: *id006
       sourcePosition: right
       targetPosition: left
       type: custom
@@ -239,7 +398,7 @@ workflow:
             size: 6
         model:
           completion_params:
-            max_tokens: 1500
+            max_tokens: 2000
             temperature: 0.3
           mode: chat
           name: gemma-4-E4B-it-MLX-8bit
@@ -247,7 +406,47 @@ workflow:
         prompt_template:
         - id: sys-prompt
           role: system
-          text: "너는 투자 정보 비서다. 아래 <검색결과> 는 사내 뉴스·YouTube·종목 리포트 색인에서 찾은 자료(JSON, records 배열)다.\n규칙:\n- 검색결과에 있는 내용만 근거로 한국어로 답한다. 없는 내용은 지어내지 말고 \"찾은 자료에 없습니다\"라고 말한다.\n- 각 문장 끝에 근거 자료 번호를 [1], [2] 처럼 붙인다(records 순서).\n- 마지막에 '출처' 로 번호·제목·게시일(metadata.published_at)·URL(metadata.url) 을 나열한다.\n- 각 자료 content 맨 앞 [게시일 … · N일 전] 을 보고, 최신 자료를 먼저 쓰고 오래된 자료는 오래됐다고 밝힌다.\n\n<검색결과>\n{{#search.body#}}\n</검색결과>"
+          text: '너는 투자 정보 비서다. 아래 네 묶음은 사내 색인에서 같은 질문으로 찾은 자료(JSON, records 배열)다: 뉴스 · YouTube · 종목분석 리포트 · 산업분석 리포트.
+
+            규칙:
+
+            - 검색결과에 있는 내용만 근거로 한국어로 답한다. 없는 내용은 지어내지 말고 "찾은 자료에 없습니다"라고 말한다.
+
+            - 질문과 관계있는 묶음만 쓴다. 답은 출처 묶음별 소제목(뉴스 / YouTube / 종목분석 / 산업분석)으로 나누고, 자료가 없거나 관계없는 묶음은 생략한다.
+
+            - 근거는 [뉴스1], [YouTube2], [종목1], [산업3] 처럼 묶음 이름과 records 순서 번호로 문장 끝에 붙인다.
+
+            - 각 자료 content 맨 앞 [게시일 … · N일 전] 을 보고 최신 자료를 먼저 쓰고, 오래된 자료는 오래됐다고 밝힌다. 날짜별 정리를 원하면 날짜순으로 쓴다.
+
+            - 마지막에 ''출처'' 로 번호·제목·게시일(metadata.published_at)·URL(metadata.url) 을 나열한다.
+
+
+            <뉴스>
+
+            {{#s_news.body#}}
+
+            </뉴스>
+
+
+            <YouTube>
+
+            {{#s_youtube.body#}}
+
+            </YouTube>
+
+
+            <종목분석 리포트>
+
+            {{#s_company.body#}}
+
+            </종목분석 리포트>
+
+
+            <산업분석 리포트>
+
+            {{#s_industry.body#}}
+
+            </산업분석 리포트>'
         selected: false
         title: 답변(LLM)
         type: llm
@@ -255,13 +454,11 @@ workflow:
         vision:
           enabled: false
       height: 98
-      id: 'llm'
-      position:
-        x: 688
+      id: llm
+      position: &id007
+        x: 990
         y: 280
-      positionAbsolute:
-        x: 688
-        y: 280
+      positionAbsolute: *id007
       sourcePosition: right
       targetPosition: left
       type: custom
@@ -274,13 +471,11 @@ workflow:
         type: answer
         variables: []
       height: 103
-      id: 'answer'
-      position:
-        x: 992
+      id: answer
+      position: &id008
+        x: 1290
         y: 280
-      positionAbsolute:
-        x: 992
-        y: 280
+      positionAbsolute: *id008
       sourcePosition: right
       targetPosition: left
       type: custom
