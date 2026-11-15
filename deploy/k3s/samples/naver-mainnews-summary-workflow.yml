@@ -1,9 +1,11 @@
 # 네이버 증권 주요뉴스 요약 워크플로(앱 종류 '워크플로'용)(2026-11-15 사용자 요청).
-# 시작 → ego(맥북 Ego Lite, CDP)로 https://stock.naver.com/news/mainnews 렌더링 → 글자 정리(코드) → gemma 요약 → 답.
-# 필요: dify-ssrf-proxy 가 ego.bbb-namespace 를 허용(app-sandbox.yaml), 맥북 Ego Lite 가 켜져 있어야 한다.
+# 시작 → ego(맥북 Ego Lite, CDP)로 https://stock.naver.com/news/mainnews 목록+링크 → 기사 링크 N개 고르기(코드)
+#   → ego /pages 로 기사 N개 본문 → 본문 정리(코드) → gemma 요약 → 답. (2026-11-15 사용자 요청: 제목만 말고 본문까지)
+# 필요: dify-ssrf-proxy 가 ego.bbb-namespace 를 허용(app-sandbox.yaml), 맥북 Ego Lite 가 켜져 있어야 한다,
+#       bbb ego 에 /api/v1/ego/pages 가 배포돼 있어야 한다(bbb #585).
 # 올리기: APP_ID=<앱 id> python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/naver-mainnews-summary-workflow.yml ""
 app:
-  description: 네이버 증권 주요뉴스(stock.naver.com/news/mainnews)를 ego(Ego Lite) 로 열어 요약
+  description: 네이버 증권 주요뉴스(stock.naver.com/news/mainnews) 기사 본문을 ego(Ego Lite) 로 읽어 요약
   icon: 🗞️
   icon_background: '#FEF3C7'
   mode: workflow
@@ -35,8 +37,28 @@ workflow:
         isInIteration: false
         sourceType: http-request
         targetType: code
-      id: fetch-clean
+      id: fetch-pick
       source: fetch
+      sourceHandle: source
+      target: pick
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: pick-articles
+      source: pick
+      sourceHandle: source
+      target: articles
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: code
+      id: articles-clean
+      source: articles
       sourceHandle: source
       target: clean
       targetHandle: target
@@ -75,7 +97,17 @@ workflow:
           type: text-input
           variable: request
           default: ''
-      height: 54
+        - default: '10'
+          label: 읽을 기사 수
+          options:
+          - '5'
+          - '10'
+          - '15'
+          - '20'
+          required: false
+          type: select
+          variable: count
+      height: 90
       id: start
       position:
         x: 80
@@ -94,9 +126,9 @@ workflow:
         body:
           data:
           - type: text
-            value: '{"url": "https://stock.naver.com/news/mainnews", "wait_until": "networkidle", "wait_ms": 2000}'
+            value: '{"url": "https://stock.naver.com/news/mainnews", "wait_until": "networkidle", "wait_ms": 2000, "include_links": true}'
           type: json
-        desc: ego(맥북 Ego Lite)가 자바스크립트까지 그린 화면 글자를 받는다(클러스터 안 주소)
+        desc: ego(맥북 Ego Lite)가 그린 목록 화면 글자와 링크를 받는다(클러스터 안 주소)
         headers: Content-Type:application/json
         method: post
         params: ''
@@ -110,7 +142,7 @@ workflow:
           max_connect_timeout: 10
           max_read_timeout: 90
           max_write_timeout: 10
-        title: 주요뉴스 화면 열기(ego)
+        title: 주요뉴스 목록 열기(ego)
         type: http-request
         url: http://ego.bbb-namespace.svc.cluster.local:8017/api/v1/ego/page
         variables: []
@@ -129,38 +161,69 @@ workflow:
     - data:
         code: |
           import json
+          import re
+
+          # 기사 주소 모양: 네이버 뉴스(n.news.naver.com/.../article/…), 증권 뉴스 상세(…/news/…/숫자), 옛 news_read
+          ARTICLE = re.compile(r"/article/|news_read|/news/[A-Za-z_]+/\d+|/news/\d+")
 
 
-          def main(body: str, status_code: int) -> dict:
-              # ego 가 그린 화면 글자에서 메뉴·광고 줄을 덜어 LLM 이 읽을 분량으로 줄인다
+          def main(body: str, status_code: int, count: str) -> dict:
               try:
                   page = json.loads(body or "{}")
               except ValueError:
                   page = {}
+              try:
+                  n = max(1, min(20, int(count or 10)))
+              except ValueError:
+                  n = 10
               if status_code != 200 or not page.get("text"):
                   detail = page.get("detail") if isinstance(page, dict) else None
-                  return {"text": "", "note": f"화면을 못 읽었습니다(상태 {status_code}): {str(detail or body)[:300]}"}
-              lines, seen = [], set()
+                  return {"pages_body": json.dumps({"urls": ["about:blank"]}), "list_text": "", "picked": "0",
+                          "note": f"목록 화면을 못 읽었습니다(상태 {status_code}): {str(detail or body)[:300]}"}
+              urls, titles, seen = [], [], set()
+              for l in page.get("links") or []:
+                  href, text = str(l.get("href") or ""), " ".join(str(l.get("text") or "").split())
+                  if len(text) < 10 or not ARTICLE.search(href) or "mainnews" in href:
+                      continue
+                  key = href.split("#")[0]
+                  if key in seen:
+                      continue
+                  seen.add(key)
+                  urls.append(key)
+                  titles.append(text)
+                  if len(urls) >= n:
+                      break
+              # 목록 화면 글자(제목·미리보기) — 본문을 못 읽은 기사도 이것으로 보완한다
+              lines, s2 = [], set()
               for ln in str(page["text"]).splitlines():
                   ln = " ".join(ln.split())
-                  if len(ln) < 8 or ln in seen:      # 짧은 메뉴·버튼 글자, 중복 줄은 뺀다
-                      continue
-                  seen.add(ln)
-                  lines.append(ln)
-              text = "\n".join(lines)[:15000]
+                  if len(ln) >= 8 and ln not in s2:
+                      s2.add(ln)
+                      lines.append(ln)
               note = page.get("suspect") or ""
-              return {"text": text, "note": f"{page.get('title') or ''} · {page.get('final_url') or ''} {note}".strip()}
+              if not urls:
+                  note += " 기사 링크를 못 찾아 목록 글자만 요약합니다."
+              body_json = json.dumps({"urls": urls or ["about:blank"], "wait_until": "domcontentloaded",
+                                      "wait_ms": 800, "max_chars": 3000}, ensure_ascii=False)
+              return {"pages_body": body_json, "list_text": "\n".join(lines)[:6000], "picked": str(len(urls)),
+                      "note": note.strip()}
         code_language: python3
-        desc: 메뉴·중복 줄을 덜고 15,000자까지
+        desc: 목록 링크에서 기사 주소 N개를 고른다
         outputs:
-          text:
+          pages_body:
+            children: null
+            type: string
+          list_text:
+            children: null
+            type: string
+          picked:
             children: null
             type: string
           note:
             children: null
             type: string
         selected: false
-        title: 화면 글자 정리
+        title: 기사 고르기
         type: code
         variables:
         - value_selector:
@@ -171,8 +234,12 @@ workflow:
           - fetch
           - status_code
           variable: status_code
+        - value_selector:
+          - start
+          - count
+          variable: count
       height: 54
-      id: clean
+      id: pick
       position:
         x: 680
         y: 280
@@ -184,13 +251,126 @@ workflow:
       type: custom
       width: 244
     - data:
+        authorization:
+          config: null
+          type: no-auth
+        body:
+          data:
+          - type: text
+            value: '{{#pick.pages_body#}}'
+          type: json
+        desc: 고른 기사를 ego 로 하나씩 열어 본문을 받는다(동시 탭 수는 ego 가 제한)
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 0
+          retry_enabled: false
+          retry_interval: 1000
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 600
+          max_write_timeout: 10
+        title: 기사 본문 열기(ego)
+        type: http-request
+        url: http://ego.bbb-namespace.svc.cluster.local:8017/api/v1/ego/pages
+        variables: []
+      height: 130
+      id: articles
+      position:
+        x: 980
+        y: 280
+      positionAbsolute:
+        x: 980
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+
+
+          def main(body: str, status_code: int, list_text: str, note: str) -> dict:
+              # 기사마다 [기사N] 제목·주소·본문 앞부분. 본문을 못 읽은 기사는 목록 글자로 보완한다고 표시
+              try:
+                  res = json.loads(body or "{}")
+              except ValueError:
+                  res = {}
+              parts, refs, ok, bad = [], [], 0, 0
+              for i, it in enumerate(res.get("items") or [], 1):
+                  url = it.get("final_url") or it.get("url") or ""
+                  if url == "about:blank":
+                      continue
+                  text = (it.get("text") or "").strip()
+                  if it.get("error") or len(text) < 200:
+                      bad += 1
+                      parts.append(f"[기사{i}] (본문 못 읽음: {it.get('error') or '본문 짧음'}) {url}")
+                      continue
+                  ok += 1
+                  parts.append(f"[기사{i}] {it.get('title') or ''}\n주소: {url}\n{text[:2500]}")
+                  refs.append(f"[기사{i}] {it.get('title') or ''} {url}")
+              msg = f"본문 읽음 {ok}건, 못 읽음 {bad}건" + (f" (ego 상태 {status_code})" if status_code != 200 else "")
+              return {"text": "\n\n".join(parts)[:30000], "list_text": list_text or "",
+                      "note": f"{msg}. {note or ''}".strip(), "refs": "\n".join(refs)}
+        code_language: python3
+        desc: 기사 본문을 [기사N] 묶음으로(최대 30,000자)
+        outputs:
+          text:
+            children: null
+            type: string
+          list_text:
+            children: null
+            type: string
+          note:
+            children: null
+            type: string
+          refs:
+            children: null
+            type: string
+        selected: false
+        title: 본문 정리
+        type: code
+        variables:
+        - value_selector:
+          - articles
+          - body
+          variable: body
+        - value_selector:
+          - articles
+          - status_code
+          variable: status_code
+        - value_selector:
+          - pick
+          - list_text
+          variable: list_text
+        - value_selector:
+          - pick
+          - note
+          variable: note
+      height: 54
+      id: clean
+      position:
+        x: 1280
+        y: 280
+      positionAbsolute:
+        x: 1280
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
         context:
           enabled: false
           variable_selector: []
-        desc: 주제별 요약
+        desc: 기사 본문 기준 주제별 요약
         model:
           completion_params:
-            max_tokens: 2000
+            max_tokens: 4000
             temperature: 0.3
           mode: chat
           name: gemma-4-E4B-it-MLX-8bit
@@ -199,20 +379,28 @@ workflow:
         - id: sys-prompt
           role: system
           text: |-
-            너는 증권 뉴스 편집자다. 아래 <화면> 은 네이버 증권 주요뉴스(stock.naver.com/news/mainnews) 화면의 글자다(메뉴·광고가 섞여 있을 수 있다).
+            너는 증권 뉴스 편집자다. 아래 <기사> 는 네이버 증권 주요뉴스(stock.naver.com/news/mainnews) 상위 기사들의 본문 앞부분이고, <목록> 은 목록 화면의 제목·미리보기 글자다.
             규칙:
-            - 화면에 있는 기사만 근거로 한국어로 쓴다. 없는 내용은 지어내지 않는다. 화면이 비었으면 "주요뉴스 화면을 읽지 못했습니다"와 아래 참고를 그대로 알린다.
+            - 기사 본문을 근거로 한국어로 쓴다. 본문을 못 읽은 기사는 <목록> 의 제목·미리보기로만 짧게 쓰고 "(제목 기준)"을 붙인다. 없는 내용은 지어내지 않는다.
+            - 숫자(지수·환율·금리·주가·실적)는 본문에 적힌 그대로 옮긴다. 스스로 계산하거나 짐작하지 않는다.
+            - 문장 끝에 근거 [기사N] 을 붙인다.
             - 형식:
               1) 오늘 시장 한눈에(3줄)
-              2) 주제별 묶음 — 거시·환율·금리 / 국내 증시 / 해외 증시 / 산업·업종 / 종목 (기사 없는 묶음은 생략). 기사마다 한 줄 요약, 끝에 (언론사·시각)
-              3) 많이 언급된 종목·업종 표(이름 | 언급 수 | 핵심)
+              2) 주제별 묶음 — 거시·환율·금리 / 국내 증시 / 해외 증시 / 산업·업종 / 종목 (기사 없는 묶음은 생략). 기사마다 2~3줄 요약(핵심 사실·숫자·원인·전망) + [기사N]
+              3) 많이 언급된 종목·업종 표(이름 | 언급 기사 | 핵심)
+              4) 출처: [기사N] 제목 · 주소
             - 사용자 요청이 비어 있으면 전체를 요약하고, 특정 주제·종목을 말하면 그 내용 위주로 답한다.
+            - 기사와 목록이 모두 비었으면 "주요뉴스를 읽지 못했습니다"와 아래 참고를 그대로 알린다.
 
             참고: {{#clean.note#}}
 
-            <화면>
+            <기사>
             {{#clean.text#}}
-            </화면>
+            </기사>
+
+            <목록>
+            {{#clean.list_text#}}
+            </목록>
         - id: user-prompt
           role: user
           text: '{{#start.request#}}'
@@ -225,10 +413,10 @@ workflow:
       height: 98
       id: llm
       position:
-        x: 980
+        x: 1580
         y: 280
       positionAbsolute:
-        x: 980
+        x: 1580
         y: 280
       sourcePosition: right
       targetPosition: left
@@ -247,10 +435,10 @@ workflow:
       height: 103
       id: end
       position:
-        x: 1280
+        x: 1880
         y: 280
       positionAbsolute:
-        x: 1280
+        x: 1880
         y: 280
       sourcePosition: right
       targetPosition: left
