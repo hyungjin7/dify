@@ -23,6 +23,8 @@ data:
   LOG_FILE: ""
   # 앱 템플릿(탐색 화면)을 바깥 tmpl.dify.ai 대신 이미지에 든 목록으로(원격 목록이 이 버전과 안 맞아 생성 오류, 2026-11-14 사용자 요청)
   HOSTED_FETCH_APP_TEMPLATES_MODE: "builtin"
+  # 화면을 열 때마다 api 가 바깥 updates.dify.ai 에 새 버전을 묻는다(최대 10초). 버전은 우리가 고정하므로 끈다(2026-11-15).
+  CHECK_UPDATE_URL: ""
   # 메일(팀 초대·비밀번호 재설정): bbb 홈페이지와 같은 Gmail 계정, 587 STARTTLS. 계정·앱 비밀번호는 Secret dify-mail
   MAIL_TYPE: "smtp"
   SMTP_SERVER: "smtp.gmail.com"

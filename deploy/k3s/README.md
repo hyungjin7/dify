@@ -74,6 +74,11 @@ GitHub `hyungjin7/dify` main 은 `.github/workflows/sync-to-gitea.yml` 이 Gitea
 - 소스(`api/`·`web/` 등)를 고쳤으면: Gitea › Actions › dify CI/CD › Run workflow(build = `api`, `web`, `agent`, `local-sandbox` 또는 `all`)로 이미지를 만들고 배포한다. 그 뒤 `provision.py --apply` 를 다시 돌려도 우리 이미지 태그는 유지된다.
 - 처음 한 번: GitHub 포크 Secrets `GITEA_USER`·`GITEA_TOKEN`(odysseus 와 같은 값).
 
+## 화면이 느릴 때
+
+`bash deploy/k3s/tools/ui-speed-check.sh` (맥북, 읽기만 함) — 바깥·클러스터 안·Redis·DB 구간별 시간과 nginx 기록의 느린 요청 상위 20을 보여 준다.
+nginx 는 요청마다 `총시간 뒤쪽시간 상태 메서드 경로` 한 줄을 남긴다: `kubectl -n dify logs deploy/dify-nginx --since=30m | sort -rn | head -30`.
+
 ## 업그레이드
 
 이미지 태그 `1.19.0` 을 새 버전으로 바꾸고 `kubectl apply -k`. 새 버전의 `docker/envs/**/*.defaults`·`docker-compose.yaml` 에 새 서비스·환경 변수가 생겼는지 먼저 본다.
