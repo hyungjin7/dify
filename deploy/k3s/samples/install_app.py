@@ -9,7 +9,7 @@ kubectl 되는 곳(맥북)에서:
   SAVE_APP_KEY=news-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/news-hourly-summary-workflow.yml  # 앱 키를 bbb Secret 으로
 
 하는 일(다시 돌려도 같은 이름 앱을 덮어쓴다):
-  1) DSL 이 rag_api_key·news_api_key 를 쓰면 그 키(Secret bbb-namespace/rag-dify-key·news-dify-key)를 kubectl 로 읽어 넣는다
+  1) DSL 이 rag_api_key·news_api_key·telegram_* 을 쓰면 그 값(Secret bbb-namespace/rag-dify-key·news-dify-key·news-telegram)을 kubectl 로 읽어 넣는다
   2) LLM 은 OpenAI-API-compatible 에 등록된 모델 중 gemma(없으면 첫 모델)를 쓴다
   3) 가져오기 → 게시 → 앱 API 키(없으면 만든다) → /v1/chat-messages 로 질문, 답과 걸린 시간을 출력
 비밀번호·키는 화면에 찍지 않는다. 표준 라이브러리만 쓴다.
@@ -78,7 +78,9 @@ def step(n, msg):
 
 
 # 1) DSL 이 쓰는 bbb 창구 키(환경 변수 이름 → Secret). 있는 것만 kubectl 로 읽는다.
-SECRET_OF = {"rag_api_key": "rag-dify-key", "news_api_key": "news-dify-key"}
+SECRET_OF = {"rag_api_key": "rag-dify-key", "news_api_key": "news-dify-key",
+             # 텔레그램(준비: samples/telegram_setup.py) — Secret 이름:칸 이름
+             "telegram_bot_token": "news-telegram:token", "telegram_chat_id": "news-telegram:chat_id"}
 step(1, "bbb 창구 키 읽기(kubectl, DSL 이 쓰는 것만)")
 env_keys = {}
 _dsl_text = open(DSL, encoding="utf-8").read()
@@ -86,12 +88,15 @@ for var, sec in SECRET_OF.items():
     if f"name: {var}" not in _dsl_text:
         continue
     try:
-        key = subprocess.run(["kubectl", "-n", "bbb-namespace", "get", "secret", sec,
-                              "-o", "jsonpath={.data.key}"], check=True, capture_output=True, text=True).stdout
+        name, _, field = sec.partition(":")
+        key = subprocess.run(["kubectl", "-n", "bbb-namespace", "get", "secret", name,
+                              "-o", "jsonpath={.data." + (field or "key") + "}"], check=True, capture_output=True, text=True).stdout
+        need(bool(key), f"Secret {name} 에 {field or 'key'} 칸이 없습니다")
         env_keys[var] = base64.b64decode(key).decode()
         print(f"    → {var} ← Secret {sec}")
     except Exception as e:  # noqa: BLE001
-        need(False, f"{sec} 를 못 읽었습니다. 먼저 python3 deploy/k3s/provision.py --apply", str(e))
+        hint = "python3 deploy/k3s/samples/telegram_setup.py" if var.startswith("telegram") else "python3 deploy/k3s/provision.py --apply"
+        need(False, f"{sec} 를 못 읽었습니다. 먼저 {hint}", str(e))
 if not env_keys:
     print("    → 필요 없음")
 

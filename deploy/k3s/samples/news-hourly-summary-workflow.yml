@@ -2,6 +2,7 @@
 # 시작(slot) → ego 주요뉴스 목록+링크 → 기사 고르기 → news 중복 확인(앞 시간 요약 제외) → 새 기사만 ego 본문
 #   → news 저장 → 요약할 기사 묶기 → gemma 요약 → 결과 정리 → 끝(summary 한 칸: 글 + 끝의 숨김 표시 news-meta).
 # 매일 07~15시 정각에 bbb dworker → news /api/v1/news/hourly-summary/run 이 이 앱을 부르고 결과를 시간별로 저장한다.
+# 끝에 텔레그램 보내기(봇 토큰·채팅방 = Secret bbb-namespace/news-telegram, 준비: samples/telegram_setup.py). 실패해도 요약 저장은 그대로.
 # 이 파일은 /tmp 생성 스크립트가 아니라 손으로 고쳐도 된다.
 # 올리기: SAVE_APP_KEY=news-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/news-hourly-summary-workflow.yml
 app:
@@ -21,6 +22,16 @@ workflow:
     name: news_api_key
     value: ''
     value_type: secret
+  - description: 텔레그램 봇 토큰(Secret bbb-namespace/news-telegram 의 token)
+    id: 0d4b5a8e-6c1f-4f2a-9e3b-7a1c2d3e4f50
+    name: telegram_bot_token
+    value: ''
+    value_type: secret
+  - description: 텔레그램 받을 채팅방 id(Secret bbb-namespace/news-telegram 의 chat_id)
+    id: 1e5c6b9f-7d2a-4a3b-8f4c-8b2d3e4f5061
+    name: telegram_chat_id
+    value: ''
+    value_type: string
   features:
     file_upload:
       enabled: false
@@ -131,9 +142,29 @@ workflow:
     - data:
         isInIteration: false
         sourceType: code
-        targetType: end
-      id: finish-end
+        targetType: code
+      id: finish-tg
       source: finish
+      sourceHandle: source
+      target: tg
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: tg-send
+      source: tg
+      sourceHandle: source
+      target: send
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: end
+      id: send-end
+      source: send
       sourceHandle: source
       target: end
       targetHandle: target
@@ -761,6 +792,139 @@ workflow:
       type: custom
       width: 244
     - data:
+        code: |
+          import html
+          import json
+          import re
+
+          LIMIT = 3800   # 텔레그램 한 번에 4096자까지. 넘으면 줄 단위로 자르고 i3 안내를 붙인다
+
+
+          def inline(t):
+              out, pos = [], 0
+              for m in re.finditer(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", t):
+                  out.append(html.escape(t[pos:m.start()]))
+                  out.append(f'<a href="{html.escape(m.group(2), quote=True)}">{html.escape(m.group(1))}</a>')
+                  pos = m.end()
+              out.append(html.escape(t[pos:]))
+              s = "".join(out).replace("\\[", "[").replace("\\]", "]")
+              return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s)
+
+
+          def line(raw):
+              t = raw.rstrip()
+              if re.match(r"^\s*\|?\s*:?-{3,}", t):          # 표 구분 줄
+                  return None
+              if t.lstrip().startswith("|"):                    # 표 줄 → "• a · b · c"
+                  cells = [c.strip() for c in t.strip().strip("|").split("|")]
+                  return "• " + " · ".join(inline(c) for c in cells if c)
+              m = re.match(r"^#{1,6}\s*(.+)$", t)
+              if m:
+                  return f"\n<b>{inline(m.group(1))}</b>"
+              m = re.match(r"^(\s*)[-*]\s+(.+)$", t)
+              if m:
+                  return ("  " if m.group(1) else "") + "• " + inline(m.group(2))
+              return inline(t)
+
+
+          def main(summary: str, chat_id: str) -> dict:
+              body = re.sub(r"<!--.*?-->", "", summary or "", flags=re.S).strip()
+              lines, size, cut = [], 0, False
+              for raw in body.splitlines():
+                  h = line(raw)
+                  if h is None:
+                      continue
+                  if size + len(h) + 1 > LIMIT:
+                      cut = True
+                      break
+                  lines.append(h)
+                  size += len(h) + 1
+              text = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+              if cut:
+                  text += "\n\n… 전체는 i3 News › 뉴스 요약(시간별)"
+              return {"body": json.dumps({"chat_id": (chat_id or "").strip(), "text": text or "(요약 없음)", "parse_mode": "HTML",
+                                          "disable_web_page_preview": True}, ensure_ascii=False)}
+        code_language: python3
+        desc: 요약을 텔레그램 글(HTML)로
+        outputs:
+          body:
+            children: null
+            type: string
+        selected: false
+        title: 텔레그램 글 만들기
+        type: code
+        variables:
+        - value_selector:
+          - finish
+          - result
+          variable: summary
+        - value_selector:
+          - env
+          - telegram_chat_id
+          variable: chat_id
+      height: 90
+      id: tg
+      position:
+        x: 3380
+        y: 280
+      positionAbsolute:
+        x: 3380
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config: null
+          type: no-auth
+        body:
+          data:
+          - type: text
+            value: '{{#tg.body#}}'
+          type: json
+        desc: 봇 토큰·채팅방 = 환경 변수(Secret bbb-namespace/news-telegram)
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 2000
+        selected: false
+        ssl_verify: true
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 30
+          max_write_timeout: 30
+        title: 텔레그램 보내기
+        type: http-request
+        url: https://api.telegram.org/bot{{#env.telegram_bot_token#}}/sendMessage
+        variables: []
+        error_strategy: default-value
+        default_value:
+        - key: body
+          type: string
+          value: ''
+        - key: status_code
+          type: number
+          value: 0
+        - key: headers
+          type: object
+          value: {}
+      height: 90
+      id: send
+      position:
+        x: 3680
+        y: 280
+      positionAbsolute:
+        x: 3680
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
         desc: 요약 한 칸만 내보내 Dify 화면에 글로 보인다. news 가 받아 시간별로 저장
         outputs:
         - value_selector:
@@ -773,10 +937,10 @@ workflow:
       height: 90
       id: end
       position:
-        x: 3380
+        x: 3980
         y: 280
       positionAbsolute:
-        x: 3380
+        x: 3980
         y: 280
       sourcePosition: right
       targetPosition: left
