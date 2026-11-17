@@ -173,10 +173,12 @@ if save_as == "news-dify-app":
     # 시간별 요약: Dify 를 바로 부르면 news 에 저장이 안 돼 i3 이력에 안 나온다 → news 를 통해 지금 시간을 다시 돌린다
     subprocess.run(["kubectl", "-n", "bbb-namespace", "rollout", "status", "deploy/news", "--timeout=300s"],
                    check=True, capture_output=True)
-    code_ = ("import urllib.request,json;r=urllib.request.urlopen(urllib.request.Request("
-             "'http://127.0.0.1:8005/api/v1/news/hourly-summary/run?force=true',method='POST'),timeout=900);"
-             "print(r.read().decode())")
-    out = subprocess.run(["kubectl", "-n", "bbb-namespace", "exec", "deploy/news", "--", "python", "-c", code_],
+    # news 는 서비스 신원이 있어야 받는다(없으면 401). 매시 정각에 부르는 dworker 의 신원(SERVICE_AUTH_*)으로 부른다.
+    code_ = ("import os,urllib.request;r=urllib.request.urlopen(urllib.request.Request("
+             "'http://news-service.bbb-namespace.svc.cluster.local:8005/api/v1/news/hourly-summary/run?force=true',"
+             "method='POST',headers={'X-Service-Name':os.environ['SERVICE_AUTH_NAME'],"
+             "'X-Service-Key':os.environ['SERVICE_AUTH_KEY']}),timeout=900);print(r.read().decode())")
+    out = subprocess.run(["kubectl", "-n", "bbb-namespace", "exec", "deploy/dworker", "--", "python", "-c", code_],
                          capture_output=True, text=True)
     sec = time.monotonic() - t0
     res = {}
