@@ -169,7 +169,25 @@ if save_as:
 step(7, f"질문: {QUESTION}")
 t0 = time.monotonic()
 inputs = json.loads(os.getenv("INPUTS", "{}"))
-if "\n  mode: workflow" in dsl:
+if save_as == "news-dify-app":
+    # 시간별 요약: Dify 를 바로 부르면 news 에 저장이 안 돼 i3 이력에 안 나온다 → news 를 통해 지금 시간을 다시 돌린다
+    subprocess.run(["kubectl", "-n", "bbb-namespace", "rollout", "status", "deploy/news", "--timeout=300s"],
+                   check=True, capture_output=True)
+    code_ = ("import urllib.request,json;r=urllib.request.urlopen(urllib.request.Request("
+             "'http://127.0.0.1:8005/api/v1/news/hourly-summary/run?force=true',method='POST'),timeout=900);"
+             "print(r.read().decode())")
+    out = subprocess.run(["kubectl", "-n", "bbb-namespace", "exec", "deploy/news", "--", "python", "-c", code_],
+                         capture_output=True, text=True)
+    sec = time.monotonic() - t0
+    res = {}
+    try:
+        res = json.loads(out.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        pass
+    need(res.get("status") == "done", f"news 를 통한 실행 실패({sec:.1f}초)", out.stdout[-1500:] + out.stderr[-1500:])
+    print(f"\n===== news 저장 완료 ({sec:.1f}초) · 기사 {res.get('articles')}건 · {res.get('slot')} =====")
+    print("i3 News › 뉴스 요약(시간별) 이력과 텔레그램에서 확인하세요")
+elif "\n  mode: workflow" in dsl:
     # 워크플로 앱: 질문은 시작 입력 request 로 넣고 /v1/workflows/run 의 outputs 를 본다
     inputs.setdefault("request", QUESTION)
     if "variable: slot" in dsl:     # 시간별 요약: 지금 KST 정각
