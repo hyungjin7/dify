@@ -1,0 +1,179 @@
+# 문서 골라 묻기(2026-11-19 사용자 요청: 지식을 종합해서 볼지, 특정 지식에만 물을지 고르기).
+# 찾기는 bbb agent 가 한다: Dify 지식 API 로 고른 지식 베이스들(1개~전부)을 각각 찾고 → 리랭커로 한 줄 세워 상위 조각만
+#   → 이 워크플로에 question·context(찾은 조각)·history(앞 대화)로 넘긴다. 이 앱은 답만 쓴다(oMLX gemma, Dify 예외).
+# 지식 베이스를 새로 만들면 화면 버튼이 저절로 생긴다(이 파일·코드 수정 없음).
+# 올리기: SAVE_APP_KEY=docs-answer-dify-app INPUTS='{"question":"서브넷이 필요한 이유","context":"(시험)"}' \
+#           python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/docs-answer-workflow.yml
+app:
+  description: bbb 가 찾아 준 문서 조각만 근거로 답한다(ccc › 기술 문서 묻기의 골라 묻기)
+  icon: 📚
+  icon_background: '#E0E7FF'
+  mode: workflow
+  name: 문서 골라 묻기
+  use_icon_as_answer_icon: false
+kind: app
+version: 0.7.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        sourceType: start
+        targetType: llm
+      id: start-llm
+      source: start
+      sourceHandle: source
+      target: llm
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: llm
+        targetType: end
+      id: llm-end
+      source: llm
+      sourceHandle: source
+      target: end
+      targetHandle: target
+      type: custom
+    nodes:
+    - data:
+        desc: bbb agent 가 질문·찾은 조각·앞 대화를 넣어 부른다
+        selected: false
+        title: 시작
+        type: start
+        variables:
+        - label: 질문
+          max_length: 4000
+          options: []
+          required: true
+          type: paragraph
+          variable: question
+        - label: 찾은 문서 조각
+          max_length: 60000
+          options: []
+          required: false
+          type: paragraph
+          variable: context
+        - label: 앞 대화
+          max_length: 12000
+          options: []
+          required: false
+          type: paragraph
+          variable: history
+        - label: 고른 지식
+          max_length: 1000
+          options: []
+          required: false
+          type: paragraph
+          variable: knowledge
+      height: 170
+      id: start
+      position:
+        x: 80
+        y: 280
+      positionAbsolute:
+        x: 80
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 찾은 조각만 근거로 답한다
+        model:
+          completion_params:
+            max_tokens: 3000
+            temperature: 0.2
+          mode: chat
+          name: gemma-4-E4B-it-MLX-8bit
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: sys-prompt
+          role: system
+          text: |-
+            너는 사내 기술 문서 안내원이다. 아래 <문서> 는 사용자가 고른 지식({{#start.knowledge#}})에서 질문으로 찾은 조각들이다.
+            각 조각 앞의 [번호] 지식 이름 · 문서 제목 으로 어느 문서에서 왔는지 알 수 있다.
+            규칙:
+            - <문서> 에 있는 내용만 근거로 한국어로 답한다. 직접 답이 없으면 "고른 문서에서 찾지 못했습니다"라고 말하고 짐작하지 않는다.
+            - 여러 지식에서 나온 내용이면 지식 이름으로 나눠 정리하고, 서로 다르면 다르다고 말한다.
+            - 콘솔·명령 조작은 메뉴 경로나 명령과 순서 번호 단계로 쓴다. 설정값·제한·숫자는 문서 그대로 옮긴다.
+            - 문장 끝에 근거 조각 번호를 [1] 처럼 붙인다. 출처 목록은 따로 쓰지 않는다(화면이 보여 준다).
+            - <앞 대화> 는 이어지는 질문의 뜻을 알기 위한 참고일 뿐 근거가 아니다.
+
+            <앞 대화>
+            {{#start.history#}}
+            </앞 대화>
+
+            <문서>
+            {{#start.context#}}
+            </문서>
+        - id: user-prompt
+          role: user
+          text: '{{#start.question#}}'
+        selected: false
+        title: 답변(LLM)
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 98
+      id: llm
+      position:
+        x: 380
+        y: 280
+      positionAbsolute:
+        x: 380
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 답 한 칸
+        outputs:
+        - value_selector:
+          - llm
+          - text
+          variable: answer
+        selected: false
+        title: 끝
+        type: end
+      height: 90
+      id: end
+      position:
+        x: 680
+        y: 280
+      positionAbsolute:
+        x: 680
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.8

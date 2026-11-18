@@ -9,6 +9,7 @@ kubectl 되는 곳(맥북)에서:
   SAVE_APP_KEY=news-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/news-hourly-summary-workflow.yml  # 앱 키를 bbb Secret 으로
   SAVE_APP_KEY=ncp-guide-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/ncp-guide-chat.yml "VPC 만드는 방법"  # ccc NCP 가이드
   SAVE_APP_KEY=tech-docs-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/tech-docs-chat.yml "Deployment 롤링 업데이트 설정"  # ccc 기술 문서
+  SAVE_APP_KEY=docs-answer-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/docs-answer-workflow.yml "서브넷이 필요한 이유"  # ccc 골라 묻기
 
 하는 일(다시 돌려도 같은 이름 앱을 덮어쓴다):
   1) DSL 이 rag_api_key·news_api_key·telegram_* 을 쓰면 그 값(Secret bbb-namespace/rag-dify-key·news-dify-key·news-telegram)을 kubectl 로 읽어 넣는다
@@ -181,7 +182,7 @@ if save_as:
     subprocess.run(["kubectl", "apply", "-f", "-"], check=True, capture_output=True, input=json.dumps(
         {"apiVersion": "v1", "kind": "Secret", "type": "Opaque",
          "metadata": {"name": save_as, "namespace": "bbb-namespace"}, "stringData": {"key": tok}}).encode())
-    user_of = {"news-dify-app": "news", "ncp-guide-dify-app": "agent", "tech-docs-dify-app": "agent"}   # 이 키를 쓰는 bbb 서비스
+    user_of = {"news-dify-app": "news", "ncp-guide-dify-app": "agent", "tech-docs-dify-app": "agent", "docs-answer-dify-app": "agent"}   # 이 키를 쓰는 bbb 서비스
     svc = user_of.get(save_as)
     if svc:
         subprocess.run(["kubectl", "-n", "bbb-namespace", "rollout", "restart", f"deploy/{svc}"], check=True, capture_output=True)
@@ -213,7 +214,10 @@ if save_as == "news-dify-app":
     print("i3 News › 뉴스 요약(시간별) 이력과 텔레그램에서 확인하세요")
 elif "\n  mode: workflow" in dsl:
     # 워크플로 앱: 질문은 시작 입력 request 로 넣고 /v1/workflows/run 의 outputs 를 본다
-    inputs.setdefault("request", QUESTION)
+    if "variable: question" in dsl:   # 문서 골라 묻기: 질문 칸 이름이 question
+        inputs.setdefault("question", QUESTION)
+    else:
+        inputs.setdefault("request", QUESTION)
     if "variable: slot" in dsl:     # 시간별 요약: 지금 KST 정각
         from datetime import datetime, timedelta, timezone
         inputs.setdefault("slot", (datetime.now(timezone(timedelta(hours=9)))).strftime("%Y-%m-%d %H:00"))
