@@ -17,7 +17,11 @@ resources:
 - app-nginx.yaml
 - ingress.yaml
 - networkpolicy.yaml
+- ncp-guide-sync.yaml
 configMapGenerator:
+- name: ncp-guide-sync
+  files:
+  - samples/ncp_guide_to_dify.py
 - name: dify-nginx
   files:
   - files/nginx/default.conf

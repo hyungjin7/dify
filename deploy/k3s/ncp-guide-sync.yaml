@@ -1,0 +1,60 @@
+# NCP 사용자 가이드 → Dify 전용 지식 베이스 주간 갱신(2026-11-18 사용자 결정: 기존 지식과 완전 분리, ccc 에서 사용).
+# 매주 일요일 03:00 KST. 바뀐 문서만 교체·새 문서 추가·사라진 문서 삭제(samples/ncp_guide_to_dify.py).
+# 상태(문서 id·원문 지문)는 nfs-hdd(예상 수십 MB 의 2배 이상 = 1Gi). 키는 Secret ncp-guide-sync(samples/ncp_guide_setup.py 가 만듦).
+# Secret 이 없으면 아무것도 하지 않고 끝난다. 첫 적재: kubectl -n dify create job --from=cronjob/ncp-guide-sync ncp-guide-first
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ncp-guide-state
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: nfs-hdd
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ncp-guide-sync
+spec:
+  schedule: "0 3 * * 0"
+  timeZone: Asia/Seoul
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 21600
+      template:
+        metadata:
+          labels:
+            app: ncp-guide-sync
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: sync
+            image: python:3.12-slim
+            command: ["python", "/app/ncp_guide_to_dify.py", "--apply"]
+            env:
+            - {name: DIFY_URL, value: "http://dify-api:5001"}
+            - {name: STATE_DIR, value: /state}
+            - {name: PYTHONUNBUFFERED, value: "1"}
+            - name: DIFY_DATASET_KEY
+              valueFrom: {secretKeyRef: {name: ncp-guide-sync, key: key, optional: true}}
+            - name: DATASET_ID
+              valueFrom: {secretKeyRef: {name: ncp-guide-sync, key: dataset_id, optional: true}}
+            resources:
+              requests: {cpu: 50m, memory: 128Mi}
+              limits: {cpu: 500m, memory: 512Mi}
+            volumeMounts:
+            - {name: app, mountPath: /app}
+            - {name: state, mountPath: /state}
+          volumes:
+          - name: app
+            configMap:
+              name: ncp-guide-sync
+          - name: state
+            persistentVolumeClaim:
+              claimName: ncp-guide-state
