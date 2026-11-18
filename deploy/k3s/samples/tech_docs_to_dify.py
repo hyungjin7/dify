@@ -5,9 +5,14 @@ NCP 가이드(ncp_guide_to_dify.py)와 같은 방식이고(2026-11-18 사용자 
   "기술문서 · Kubernetes" / "· PostgreSQL" / "· Traefik" / "· Argo CD" / "· Helm"
   → 한 문서만 골라 묻거나(정확), 다섯 개를 함께 물을 수 있다. 다른 지식(rag·NCP)과 섞이지 않는다.
 
-가져오는 방법(사이트를 페이지마다 긁지 않는다):
-  - Kubernetes·Argo CD·Helm·Traefik: 문서 원문(마크다운)이 GitHub 저장소에 있다 → 저장소 묶음(tar.gz) 1번 받기
-  - PostgreSQL: 원문이 SGML 이라 공식 사이트 /docs/current/ 의 HTML 페이지를 받아 글자만 뽑는다(릴리스 노트 제외)
+가져오는 방법 5가지(kind, 2026-11-19 지식 출처 모음 설계 1단계 — 출처를 더하면 SOURCES 에 한 줄만 더한다):
+  - git:   문서 원문(md·mdx·rst)이 GitHub 저장소에 있다 → 저장소 묶음(tar.gz) 1번 받기(ref 여러 개면 차례로 시도)
+  - html:  같은 폴더의 *.html 을 따라간다(PostgreSQL, 릴리스 노트 제외)
+  - crawl: 시작 주소 아래(prefix)의 링크를 따라가며 본문(main·article·알려진 본문 칸)만 뽑는다. max 쪽 상한, 1초에 1쪽
+  - links: 목록 한 쪽에서 정해진 모양(pattern)의 링크만 받는다(MIT 6.5840 강의 노트 .txt)
+  - wiki:  MediaWiki 분류(categories)에 든 문서를 원문 위키텍스트(action=raw)로 받는다(ArchWiki)
+  - llms:  사이트의 /llms.txt 목록 → 각 쪽 .md(없으면 HTML 본문)
+저작권: 사내 참고용으로만 쓰고, 답에는 원문 링크를 붙인다. roadmap.sh 는 "개인 사용만" 라이선스라 넣지 않는다(사용자 결정 대기 2026-11-19).
 
 갱신 규칙(상태 STATE_DIR/<문서>.json = 주소 → 문서 id·원문 지문): 새 주소 → 추가, 원문이 바뀜 → 그 문서만 교체,
 목록에서 사라짐 → 삭제(목록이 지난번의 MIN_KEEP_RATIO 밑으로 줄면 사이트 문제로 보고 지우지 않는다).
@@ -60,6 +65,36 @@ SOURCES = {
                 "exclude": r"^(assets|includes|overrides)/"},
     "postgresql": {"name": "PostgreSQL", "kind": "html", "base": "https://www.postgresql.org/docs/current/",
                    "start": "index.html", "exclude": r"^release-\d"},
+    # ---- 2026-11-19 사용자 요청: 클라우드 교과서·SRE·보안·Linux·CNCF·국내 SaaS ----
+    "azure-patterns": {"name": "Azure 클라우드 디자인 패턴", "kind": "git", "repo": "MicrosoftDocs/architecture-center",
+                       "ref": ["main", "master"], "dirs": ["docs/patterns"],
+                       "base": "https://learn.microsoft.com/en-us/azure/architecture/patterns/", "suffix": ""},
+    "gcp-architecture": {"name": "Google Cloud Architecture Center", "kind": "crawl",
+                         "start": "https://docs.cloud.google.com/architecture/", "max": 1500,
+                         "exclude": r"/(release-notes|support)(/|$)"},
+    "aws-well-architected": {"name": "AWS Well-Architected", "kind": "crawl",
+                             "start": "https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html",
+                             "prefix": "https://docs.aws.amazon.com/wellarchitected/latest/framework/", "max": 800},
+    "google-sre": {"name": "Google SRE 책", "kind": "crawl",
+                   "start": ["https://sre.google/sre-book/table-of-contents/", "https://sre.google/workbook/table-of-contents/"],
+                   "prefix": ["https://sre.google/sre-book/", "https://sre.google/workbook/"], "max": 300},
+    "twelve-factor": {"name": "The Twelve-Factor App", "kind": "git", "repo": "twelve-factor/twelve-factor",
+                      "ref": ["main", "master"], "dirs": ["content/ko", "content/en"], "base": "https://12factor.net/ko/",
+                      "suffix": "", "lang": "Korean"},
+    "mit-6.5840": {"name": "MIT 6.5840 분산 시스템", "kind": "links",
+                   "index": "https://pdos.csail.mit.edu/6.824/schedule.html", "pattern": r"notes/[^\"'#?]+\.txt$"},
+    "owasp-cheatsheets": {"name": "OWASP Cheat Sheet Series", "kind": "git", "repo": "OWASP/CheatSheetSeries",
+                          "ref": ["master", "main"], "dirs": ["cheatsheets"],
+                          "base": "https://cheatsheetseries.owasp.org/cheatsheets/", "suffix": ".html"},
+    "archwiki": {"name": "ArchWiki", "kind": "wiki", "base": "https://wiki.archlinux.org/", "max": 1500,
+                 "categories": ["System administration", "Networking", "Storage", "Boot process", "Security",
+                                "Virtualization", "Kernel", "Network configuration", "File systems"]},
+    "cilium": {"name": "Cilium", "kind": "git", "repo": "cilium/cilium", "ref": ["main"], "dirs": ["Documentation"],
+               "base": "https://docs.cilium.io/en/stable/", "exclude": r"^(_|cmdref/|contributing/|spelling)"},
+    "prometheus": {"name": "Prometheus", "kind": "git", "repo": "prometheus/prometheus", "ref": ["main"], "dirs": ["docs"],
+                   "base": "https://prometheus.io/docs/prometheus/latest/", "exclude": r"^(images|command-line)/"},
+    "tosspayments": {"name": "토스페이먼츠 개발자 문서", "kind": "llms", "site": "https://docs.tosspayments.com",
+                     "lang": "Korean", "max": 1500},
 }
 DATASET_PREFIX = "기술문서 · "
 
@@ -114,18 +149,35 @@ def clean_md(text):
     return title, text
 
 
+def clean_rst(text):
+    """reStructuredText(Sphinx) → 읽을 만한 글자. 제목 = 밑줄 친 첫 줄."""
+    title = ""
+    m = re.search(r"^(\S[^\n]*)\n([=\-~^\"'`#*+]{3,})\s*$", text, re.M)
+    if m:
+        title = m.group(1).strip()
+    text = re.sub(r"^\.\. (only|include|toctree|raw|image|figure|tabs|spelling)::.*?(?=^\S|\Z)", "", text, flags=re.M | re.S)
+    text = re.sub(r"^\.\. _[^:]+:\s*$", "", text, flags=re.M)              # 이름표
+    text = re.sub(r":(ref|doc|term|option|command|ghissue):`([^`<]*?)(?:\s*<[^>]*>)?`", r"\2", text)
+    text = re.sub(r"^(\S[^\n]*)\n[=\-~^\"'`#*+]{3,}\s*$", r"## \1", text, flags=re.M)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return title, text
+
+
 def git_pages(src):
     """저장소 묶음을 흘려 읽는다(통째로 메모리에 올리지 않음 — kubernetes/website 는 수백 MB)."""
-    url = f"https://codeload.github.com/{src['repo']}/tar.gz/refs/heads/{src['ref']}"
-    log(f"  저장소 묶음 받는 중: {src['repo']}@{src['ref']}")
+    refs = src["ref"] if isinstance(src["ref"], list) else [src["ref"]]
     exclude = re.compile(src["exclude"]) if src.get("exclude") else None
+    suffix = src.get("suffix", "/")
     found = {d: [] for d in src["dirs"]}
-    for i in range(3):
+    tries = [(ref, i) for ref in refs for i in range(3 if ref == refs[-1] else 1)]
+    for ref, i in tries:
+        url = f"https://codeload.github.com/{src['repo']}/tar.gz/refs/heads/{ref}"
+        log(f"  저장소 묶음 받는 중: {src['repo']}@{ref}")
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=300) as r, \
                     tarfile.open(fileobj=r, mode="r|gz") as tar:
                 for m in tar:
-                    if not m.isfile() or not m.name.endswith((".md", ".mdx")):
+                    if not m.isfile() or not m.name.endswith((".md", ".mdx", ".rst")):
                         continue
                     inner = m.name.split("/", 1)[-1]
                     d = next((d for d in src["dirs"] if inner.startswith(d + "/")), None)
@@ -134,16 +186,23 @@ def git_pages(src):
                     rel = inner[len(d) + 1:]
                     if exclude and exclude.search(rel):
                         continue
-                    title, text = clean_md(tar.extractfile(m).read().decode("utf-8", "replace"))
+                    raw = tar.extractfile(m).read().decode("utf-8", "replace")
+                    title, text = clean_rst(raw) if m.name.endswith(".rst") else clean_md(raw)
                     if len(text) < 80:
                         continue
-                    path = re.sub(r"\.mdx?$", "", rel)
+                    path = re.sub(r"\.(mdx?|rst)$", "", rel)
                     path = re.sub(r"(^|/)(_?index|README)$", r"\1", path, flags=re.I)
-                    page_url = src["base"] + (path + "/" if path and not path.endswith("/") else path)
+                    page_url = src["base"] + (path + suffix if path and not path.endswith("/") else path)
                     found[d].append((title or posixpath.basename(path.rstrip("/")) or src["name"], page_url, text))
             break
+        except urllib.error.HTTPError as e:
+            if e.code == 404 and ref != refs[-1]:   # 그 이름의 브랜치가 없다 → 다음 ref
+                continue
+            if (ref, i) == tries[-1]:
+                raise RuntimeError(f"{url} 받기 실패: {e!r}")
+            time.sleep(10 * (i + 1))
         except (urllib.error.URLError, TimeoutError, tarfile.TarError, OSError) as e:
-            if i == 2:
+            if (ref, i) == tries[-1]:
                 raise RuntimeError(f"{url} 받기 실패: {e!r}")
             time.sleep(10 * (i + 1))
     return next((found[d] for d in src["dirs"] if found[d]), [])   # 먼저 적힌 폴더 우선
@@ -153,11 +212,15 @@ def git_pages(src):
 class DocText(HTMLParser):
     BLOCK = {"p", "div", "li", "tr", "dt", "dd", "table", "br", "ul", "ol", "dl", "blockquote"}
     SKIP_CLASS = ("navheader", "navfooter", "toc")
+    SKIP_TAGS = {"nav", "aside", "footer", "script", "style", "header"}
 
-    def __init__(self):
+    def __init__(self, match=None):
         super().__init__(convert_charrefs=True)
+        # 본문 칸을 알아보는 규칙(기본 = PostgreSQL docContent). crawl 은 main·article·알려진 본문 칸.
+        self.match = match or (lambda tag, a: tag == "div" and a.get("id") == "docContent")
+        self.ctag = "div"
         self.out, self.title, self.links = [], "", []
-        self.depth = 0          # docContent 안 깊이(0 = 밖)
+        self.depth = 0          # 본문 칸 안 깊이(0 = 밖)
         self.skip = 0           # 건너뛸 블록 깊이
         self.pre = False
         self.in_title = False
@@ -169,16 +232,19 @@ class DocText(HTMLParser):
             self.links.append(a["href"])
         if tag == "title":
             self.in_title = True
-        if tag == "div" and a.get("id") == "docContent":
-            self.depth = 1
+        if not self.depth and self.match(tag, a):
+            self.depth, self.ctag = 1, tag
             return
         if not self.depth:
             return
-        if tag == "div":
+        if tag == self.ctag:
             self.depth += 1
-            if self.skip or any(c in (a.get("class") or "") for c in self.SKIP_CLASS):
-                self.skip += 1
         if self.skip:
+            if tag in self.SKIP_TAGS or tag == "div":
+                self.skip += 1
+            return
+        if tag in self.SKIP_TAGS or (tag == "div" and any(c in (a.get("class") or "") for c in self.SKIP_CLASS)):
+            self.skip = 1
             return
         if tag in ("h1", "h2", "h3", "h4"):
             self.out.append("\n\n" + "#" * max(2, int(tag[1])) + " ")
@@ -195,12 +261,13 @@ class DocText(HTMLParser):
             self.in_title = False
         if not self.depth:
             return
-        if tag == "div":
-            if self.skip:
-                self.skip -= 1
+        if tag == self.ctag:
             self.depth -= 1
-            return
+            if not self.depth:
+                return
         if self.skip:
+            if tag in self.SKIP_TAGS or tag == "div":
+                self.skip -= 1
             return
         if tag == "pre":
             self.pre = False
@@ -248,6 +315,163 @@ def html_pages(src):
     return pages
 
 
+# ---------- crawl · links · wiki · llms (2026-11-19) ----------
+MAIN_IDS = ("main-col-body", "main-content", "content", "docs-content", "bodyContent", "mw-content-text")
+MAIN_CLASS = ("devsite-article-body", "markdown-body", "rst-content", "article-body", "md-content")
+
+
+def main_body(tag, a):
+    cls = a.get("class") or ""
+    return tag in ("main", "article") or a.get("id") in MAIN_IDS or any(c in cls for c in MAIN_CLASS)
+
+
+def page_text(body):
+    """HTML 한 쪽 → (제목, 본문 글자, 링크들). 본문 칸을 못 찾으면 태그만 걷어낸다."""
+    p = DocText(match=main_body)
+    p.feed(body)
+    text = p.text()
+    if len(text) < 80:
+        text = re.sub(r"\s+", " ", html.unescape(re.sub(r"<(script|style|nav|header|footer)[^>]*>.*?</\1>|<[^>]+>", " ",
+                                                           body, flags=re.S | re.I))).strip()
+    title = re.split(r"\s+[|\-–—]\s+", html.unescape(p.head).strip())[0].strip()
+    return title, text, p.links
+
+
+def _norm(url):
+    u = urllib.parse.urlsplit(url)
+    return urllib.parse.urlunsplit((u.scheme, u.netloc, u.path, "", ""))
+
+
+def crawl_pages(src):
+    """시작 주소들에서 prefix 아래 링크만 따라간다(너비 우선, max 쪽, 1쪽마다 PAGE_DELAY)."""
+    starts = src["start"] if isinstance(src["start"], list) else [src["start"]]
+    prefixes = src.get("prefix") or [s0 if s0.endswith("/") else s0.rsplit("/", 1)[0] + "/" for s0 in starts]
+    prefixes = prefixes if isinstance(prefixes, list) else [prefixes]
+    exclude = re.compile(src["exclude"]) if src.get("exclude") else None
+    cap = LIMIT or src.get("max", 500)
+    queue, seen, pages = [_norm(x) for x in starts], {_norm(x) for x in starts}, []
+    while queue and len(pages) < cap:
+        url = queue.pop(0)
+        st, body = get(url)
+        time.sleep(PAGE_DELAY)
+        if st != 200 or "<html" not in body[:2000].lower():
+            continue
+        title, text, links = page_text(body)
+        for href in links:
+            u = _norm(urllib.parse.urljoin(url, href))
+            if u in seen or not any(u.startswith(px) for px in prefixes) or (exclude and exclude.search(href)):
+                continue
+            if re.search(r"\.(png|jpe?g|gif|svg|pdf|zip|gz|mp4)$", u, re.I):
+                continue
+            seen.add(u)
+            queue.append(u)
+        if len(text) >= 200:
+            pages.append((title or url.rstrip("/").rsplit("/", 1)[-1], url, text))
+        if len(pages) % 100 == 0 and pages:
+            log(f"  {src['name']} 페이지 {len(pages)}개 받음…")
+    return pages
+
+
+def link_pages(src):
+    """목록 한 쪽에서 pattern 에 맞는 링크만(글자 파일·HTML)."""
+    st, body = get(src["index"])
+    if st != 200:
+        raise RuntimeError(f"{src['index']} 받기 실패 {st}")
+    pat, pages, seen = re.compile(src["pattern"]), [], set()
+    for href, label in re.findall(r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', body, flags=re.S | re.I):
+        u = _norm(urllib.parse.urljoin(src["index"], href))
+        if u in seen or not pat.search(u):
+            continue
+        seen.add(u)
+        st, raw = get(u)
+        time.sleep(PAGE_DELAY)
+        if st != 200:
+            continue
+        title = re.sub(r"<[^>]+>|\s+", " ", html.unescape(label)).strip() or u.rsplit("/", 1)[-1]
+        text = page_text(raw)[1] if "<html" in raw[:2000].lower() else raw.strip()
+        if len(text) >= 200:
+            pages.append((title, u, text))
+    return pages
+
+
+def clean_wikitext(text):
+    text = re.sub(r"\{\{[^{}]*\}\}", "", text)
+    text = re.sub(r"\[\[(?:Category|[a-z]{2}(?:-[a-z]+)?):[^\]]*\]\]", "", text)
+    text = re.sub(r"\[\[[^|\]]*\|([^\]]*)\]\]", r"\1", text)
+    text = re.sub(r"\[\[([^\]]*)\]\]", r"\1", text)
+    text = re.sub(r"^(=+)\s*(.*?)\s*\1\s*$", lambda m: "#" * max(2, len(m.group(1))) + " " + m.group(2), text, flags=re.M)
+    text = re.sub(r"'{2,}", "", text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def wiki_pages(src):
+    """MediaWiki: 분류마다 문서 이름(API categorymembers) → 원문(index.php?action=raw). 영문 문서만."""
+    api, base = src["base"] + "api.php", src["base"]
+    titles = []
+    for cat in src["categories"]:
+        cont = ""
+        while True:
+            q = {"action": "query", "list": "categorymembers", "cmtitle": f"Category:{cat}", "cmlimit": "500",
+                 "cmnamespace": "0", "format": "json"}
+            if cont:
+                q["cmcontinue"] = cont
+            st, body = get(api + "?" + urllib.parse.urlencode(q))
+            time.sleep(PAGE_DELAY)
+            if st != 200:
+                break
+            d = json.loads(body or "{}")
+            titles += [m["title"] for m in d.get("query", {}).get("categorymembers", [])
+                       if not re.search(r"\((?:\w+ )?(?:简体中文|日本語|Русский|Español|Deutsch|Français|Português|Italiano|"
+                                        r"Polski|Українська|한국어|Magyar|Čeština|Suomi|Ελληνικά|العربية|Türkçe|"
+                                        r"Nederlands|Svenska|Dansk|Bahasa Indonesia|Tiếng Việt|繁體中文|正體中文)\)$", m["title"])]
+            cont = d.get("continue", {}).get("cmcontinue", "")
+            if not cont:
+                break
+    pages, cap = [], LIMIT or src.get("max", 1000)
+    for t in dict.fromkeys(titles):
+        if len(pages) >= cap:
+            break
+        page = base + "title/" + urllib.parse.quote(t.replace(" ", "_"))
+        st, raw = get(base + "index.php?" + urllib.parse.urlencode({"title": t, "action": "raw"}))
+        time.sleep(PAGE_DELAY)
+        if st != 200 or raw.lstrip().upper().startswith("#REDIRECT"):
+            continue
+        text = clean_wikitext(raw)
+        if len(text) >= 200:
+            pages.append((t, page, text))
+    return pages
+
+
+def llms_pages(src):
+    """사이트 /llms.txt 목록 → 각 쪽 .md(이미 .md 면 그대로, 마크다운이 아니면 HTML 본문)."""
+    site = src["site"].rstrip("/")
+    st, idx = get(site + "/llms.txt")
+    if st != 200:
+        raise RuntimeError(f"{site}/llms.txt 받기 실패 {st}")
+    host = urllib.parse.urlsplit(site).netloc
+    pages, seen, cap = [], set(), LIMIT or src.get("max", 2000)
+    for title, url in re.findall(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", idx):
+        url = url.split("#")[0]
+        if url in seen or urllib.parse.urlsplit(url).netloc != host:
+            continue
+        seen.add(url)
+        if len(pages) >= cap:
+            break
+        md = url if url.endswith(".md") else url.rstrip("/") + ".md"
+        st, text = get(md)
+        if st != 200 or text.lstrip().startswith("<"):
+            st, body = get(url)
+            text = page_text(body)[1] if st == 200 else ""
+        time.sleep(PAGE_DELAY)
+        if len(text.strip()) >= 80:
+            pages.append((title.strip(), url.removesuffix(".md"), clean_md(text)[1]))
+    return pages
+
+
+KINDS = {"git": lambda s0: git_pages(s0), "html": lambda s0: html_pages(s0), "crawl": lambda s0: crawl_pages(s0),
+         "links": lambda s0: link_pages(s0), "wiki": lambda s0: wiki_pages(s0), "llms": lambda s0: llms_pages(s0)}
+
+
 # ---------- Dify ----------
 def dify(method, path, body=None):
     req = urllib.request.Request(DIFY + path, method=method, data=json.dumps(body).encode() if body is not None else None,
@@ -285,7 +509,7 @@ def doc_name(title, url):
 
 
 def sync(key, src):
-    pages = (git_pages if src["kind"] == "git" else html_pages)(src)
+    pages = KINDS[src["kind"]](src)
     pages = list({u: (t, u, x) for t, u, x in pages}.values())
     if LIMIT:
         pages = pages[:LIMIT]
@@ -304,7 +528,7 @@ def sync(key, src):
         model, provider = embedding()
         st, res = dify("POST", "/datasets", {"name": name, "indexing_technique": "high_quality", "permission": "only_me",
                                              "embedding_model": model, "embedding_model_provider": provider,
-                                             "description": f"{src['name']} 공식 문서(영문, 주 1회 갱신). 다른 지식과 분리"})
+                                             "description": f"{src['name']} 문서({'한국어' if src.get('lang') == 'Korean' else '영문'}, 주 1회 갱신). 다른 지식과 분리"})
         if st not in (200, 201):
             sys.exit(f"[실패] 지식 베이스 만들기 {st}: {res}")
         ds = res
@@ -344,7 +568,7 @@ def sync(key, src):
             c["same"] += 1
             continue
         body = {"name": nm, "text": f"# {title}\n원문: {url}\n\n{text}", "doc_form": "hierarchical_model",
-                "doc_language": "English", "indexing_technique": "high_quality", "process_rule": PROCESS_RULE}
+                "doc_language": src.get("lang", "English"), "indexing_technique": "high_quality", "process_rule": PROCESS_RULE}
         st = 0
         if doc_id:
             st, res = dify("POST", f"/datasets/{ds_id}/documents/{doc_id}/update-by-text", body)
