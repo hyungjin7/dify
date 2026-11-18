@@ -7,6 +7,8 @@
 하는 일(다시 돌려도 안전):
   1) Dify 콘솔 로그인 → 지식 API 키 만들기(Secret dify/ncp-guide-sync 가 이미 있으면 그 키를 그대로 씀)
   2) 지식 베이스 "NCP 사용자 가이드" 찾기·없으면 만들기(고품질 색인, 임베딩 모델 bge-m3 를 직접 지정 — EMBEDDING_MODEL 로 바꿈)
+  2b) 찾는 방식: 하이브리드(뜻 + 낱말) + 리랭커 bge-reranker-v2-m3, 조각 8개(RERANK_MODEL·TOP_K 로 바꿈, 2026-11-19)
+      — "서브넷이 왜 필요해?"처럼 문서 말투와 다른 질문도 VPC·Subnet 개요 문서를 찾게 한다. 이미 있는 지식 베이스에도 다시 적용된다.
   3) Secret dify/ncp-guide-sync {key, dataset_id} 저장 → CronJob ncp-guide-sync 가 이 값으로 갱신한다
 그다음(출력에 명령이 나온다):
   - 첫 적재: kubectl -n dify create job --from=cronjob/ncp-guide-sync ncp-guide-first   (1~2시간, 밤 추천)
@@ -93,6 +95,21 @@ def embedding_model():
     return pick
 
 
+def rerank_model():
+    """리랭커(bge-reranker-v2-m3, 없으면 첫 리랭커). 하나도 없으면 None → 뜻 검색만."""
+    login()
+    st, res = call("GET", f"{BASE}/console/api/workspaces/current/models/model-types/rerank")
+    if st != 200:
+        print(f"    (리랭커 목록 실패 {st}, 리랭커 없이 진행)")
+        return None
+    cands = [(p["provider"], m["model"]) for p in (res or {}).get("data", []) for m in p.get("models", [])
+             if m.get("status", "active") == "active"]
+    want = os.getenv("RERANK_MODEL", "bge-reranker-v2-m3").lower()
+    pick = next((c for c in cands if c[1].lower() == want), None) or (cands[0] if cands else None)
+    print(f"    → 리랭커 {pick[0]} / {pick[1]}" if pick else "    (리랭커 없음: 설정 › 모델 공급자에 bge-reranker-v2-m3 를 추가하면 더 잘 찾는다)")
+    return pick
+
+
 # 1) 지식 API 키
 key = ""
 r = kubectl("-n", "dify", "get", "secret", "ncp-guide-sync", "-o", "jsonpath={.data.key}")
@@ -118,12 +135,27 @@ else:
     provider, model = embedding_model()
     st, res = call("POST", f"{BASE}/v1/datasets", {"name": NAME, "indexing_technique": "high_quality", "permission": "only_me",
                                                     "embedding_model": model, "embedding_model_provider": provider,
-                                                    "description": "guide.ncloud-docs.com 사용자 가이드(llms.txt + .md, 주 1회 갱신). 다른 지식과 분리"},
+                                                    "description": "NCP 사용자 가이드 일반·공공(llms.txt + .md, 주 1회 갱신). 다른 지식과 분리"},
                    token=key)
     if st not in (200, 201) or not isinstance(res, dict) or not res.get("id"):
         fail(f"지식 베이스 만들기 실패({st})", res)
     ds_id = res["id"]
     print(f"[2] 지식 베이스 만듦: {NAME} ({ds_id})")
+
+# 2b) 찾는 방식(다시 돌려도 같은 값)
+TOP_K = int(os.getenv("TOP_K", "8"))
+rr = rerank_model()
+if rr:
+    retrieval = {"search_method": "hybrid_search", "reranking_enable": True, "reranking_mode": "reranking_model",
+                 "reranking_model": {"reranking_provider_name": rr[0], "reranking_model_name": rr[1]},
+                 "top_k": TOP_K, "score_threshold_enabled": False, "score_threshold": 0}
+else:
+    retrieval = {"search_method": "semantic_search", "reranking_enable": False, "top_k": TOP_K,
+                 "score_threshold_enabled": False, "score_threshold": 0}
+st, res = call("PATCH", f"{BASE}/v1/datasets/{ds_id}", {"retrieval_model": retrieval}, token=key)
+if st != 200:
+    fail(f"찾는 방식 설정 실패({st})", res)
+print(f"[2b] 찾는 방식: {retrieval['search_method']}{' + 리랭커' if rr else ''}, 조각 {TOP_K}개")
 
 # 3) Secret
 secret = {"apiVersion": "v1", "kind": "Secret", "type": "Opaque",
