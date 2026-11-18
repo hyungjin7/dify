@@ -6,7 +6,7 @@
 
 하는 일(다시 돌려도 안전):
   1) Dify 콘솔 로그인 → 지식 API 키 만들기(Secret dify/ncp-guide-sync 가 이미 있으면 그 키를 그대로 씀)
-  2) 지식 베이스 "NCP 사용자 가이드" 찾기·없으면 만들기(고품질 색인 = 작업공간 기본 임베딩 모델, bge-m3)
+  2) 지식 베이스 "NCP 사용자 가이드" 찾기·없으면 만들기(고품질 색인, 임베딩 모델 bge-m3 를 직접 지정 — EMBEDDING_MODEL 로 바꿈)
   3) Secret dify/ncp-guide-sync {key, dataset_id} 저장 → CronJob ncp-guide-sync 가 이 값으로 갱신한다
 그다음(출력에 명령이 나온다):
   - 첫 적재: kubectl -n dify create job --from=cronjob/ncp-guide-sync ncp-guide-first   (1~2시간, 밤 추천)
@@ -60,6 +60,39 @@ def fail(msg, detail=None):
     sys.exit(1)
 
 
+_logged_in = False
+
+
+def login():
+    global _logged_in
+    if _logged_in:
+        return
+    email = os.getenv("DIFY_EMAIL") or input("Dify 이메일: ").strip()
+    password = os.getenv("DIFY_PASSWORD") or getpass.getpass("Dify 비밀번호: ")
+    st, res = call("POST", f"{BASE}/console/api/login",
+                   {"email": email, "password": base64.b64encode(password.encode()).decode(), "remember_me": True})
+    if st != 200 or not isinstance(res, dict) or res.get("result") != "success":
+        fail(f"로그인 실패({st})", res)
+    _logged_in = True
+
+
+def embedding_model():
+    """작업공간 기본값에 기대지 않고 bge-m3(없으면 첫 임베딩 모델)를 직접 고른다."""
+    login()
+    st, res = call("GET", f"{BASE}/console/api/workspaces/current/models/model-types/text-embedding")
+    if st != 200:
+        fail(f"임베딩 모델 목록 실패({st})", res)
+    cands = [(p["provider"], m["model"]) for p in (res or {}).get("data", []) for m in p.get("models", [])
+             if m.get("status", "active") == "active"]
+    want = os.getenv("EMBEDDING_MODEL", "bge-m3").lower()
+    pick = next((c for c in cands if c[1].lower() == want), None) or next((c for c in cands if want in c[1].lower()), None) \
+        or (cands[0] if cands else None)
+    if not pick:
+        fail("쓸 수 있는 임베딩 모델이 없습니다. 설정 › 모델 공급자에 bge-m3(Text Embedding Inference)를 먼저 추가하세요", res)
+    print(f"    → 임베딩 모델 {pick[0]} / {pick[1]}")
+    return pick
+
+
 # 1) 지식 API 키
 key = ""
 r = kubectl("-n", "dify", "get", "secret", "ncp-guide-sync", "-o", "jsonpath={.data.key}")
@@ -67,12 +100,7 @@ if r.returncode == 0 and r.stdout:
     key = base64.b64decode(r.stdout).decode()
     print("[1] 기존 Secret dify/ncp-guide-sync 의 지식 API 키 사용")
 else:
-    email = os.getenv("DIFY_EMAIL") or input("Dify 이메일: ").strip()
-    password = os.getenv("DIFY_PASSWORD") or getpass.getpass("Dify 비밀번호: ")
-    st, res = call("POST", f"{BASE}/console/api/login",
-                   {"email": email, "password": base64.b64encode(password.encode()).decode(), "remember_me": True})
-    if st != 200 or not isinstance(res, dict) or res.get("result") != "success":
-        fail(f"로그인 실패({st})", res)
+    login()
     st, res = call("POST", f"{BASE}/console/api/datasets/api-keys", {})
     if st not in (200, 201) or not isinstance(res, dict) or not res.get("token"):
         fail(f"지식 API 키 만들기 실패({st})", res)
@@ -87,11 +115,13 @@ ds_id = next((d["id"] for d in res.get("data", []) if d.get("name") == NAME), ""
 if ds_id:
     print(f"[2] 지식 베이스 있음: {NAME} ({ds_id})")
 else:
+    provider, model = embedding_model()
     st, res = call("POST", f"{BASE}/v1/datasets", {"name": NAME, "indexing_technique": "high_quality", "permission": "only_me",
+                                                    "embedding_model": model, "embedding_model_provider": provider,
                                                     "description": "guide.ncloud-docs.com 사용자 가이드(llms.txt + .md, 주 1회 갱신). 다른 지식과 분리"},
                    token=key)
     if st not in (200, 201) or not isinstance(res, dict) or not res.get("id"):
-        fail(f"지식 베이스 만들기 실패({st}). 설정 › 모델 공급자에서 기본 임베딩 모델(bge-m3)을 먼저 정하세요", res)
+        fail(f"지식 베이스 만들기 실패({st})", res)
     ds_id = res["id"]
     print(f"[2] 지식 베이스 만듦: {NAME} ({ds_id})")
 
