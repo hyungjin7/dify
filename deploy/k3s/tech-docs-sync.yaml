@@ -1,4 +1,4 @@
-# 인프라 기술 문서(Kubernetes·PostgreSQL·Traefik·Argo CD·Helm) → Dify 지식 베이스 주간 갱신(2026-11-18 사용자 요청, NCP 가이드와 같은 방식).
+# 기술 문서(Kubernetes·PostgreSQL·Traefik·Argo CD·Helm + 2026-11-19 Azure·GCP·AWS·SRE·12-Factor·MIT·OWASP·ArchWiki·Cilium·Prometheus·토스) → Dify 지식 베이스 주간 갱신.
 # 매주 일요일 04:00 KST(NCP 03:00 다음). 문서마다 지식 베이스 "기술문서 · <이름>" 를 따로 둔다(samples/tech_docs_to_dify.py).
 # 키는 NCP 와 같은 지식 API 키(Secret ncp-guide-sync). 상태는 NCP 와 같은 PVC ncp-guide-state 의 tech/ 폴더.
 # 첫 적재: kubectl -n dify create job --from=cronjob/tech-docs-sync tech-docs-first
@@ -15,7 +15,7 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 1
-      activeDeadlineSeconds: 21600
+      activeDeadlineSeconds: 43200   # 2026-11-19 출처 16개(사이트 따라가기 포함) → 12시간
       template:
         metadata:
           labels:
