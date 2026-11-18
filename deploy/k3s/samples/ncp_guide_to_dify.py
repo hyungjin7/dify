@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""NAVER Cloud Platform 사용자 가이드(guide.ncloud-docs.com)를 Dify 전용 지식 베이스에 넣고, 바뀐 것만 갱신한다.
+"""NAVER Cloud Platform 사용자 가이드(일반 guide.ncloud-docs.com + 공공 guide-gov.ncloud-docs.com)를 Dify 전용 지식 베이스에 넣고, 바뀐 것만 갱신한다.
 
 방법(Firecrawl 없음): /llms.txt(전체 페이지 목록) → 페이지 주소 + .md(마크다운 원문)
      → Dify 지식 API create-by-text / update-by-text / 삭제. 기존 지식(rag·다른 지식 베이스)과 섞이지 않는다.
@@ -15,7 +15,8 @@
 환경 변수:
   DIFY_DATASET_KEY  지식 API 키(없으면 묻는다)   DATASET_ID  지식 베이스 id(없으면 DATASET_NAME 으로 찾고 없으면 만든다)
   DATASET_NAME      기본 "NCP 사용자 가이드"     DIFY_URL    기본 https://dify.delvrio.com (CronJob 은 http://dify-api:5001)
-  INCLUDE / EXCLUDE 넣을·뺄 주소 정규식(기본 = 한국어 일반 가이드 /docs/ 만)
+  NCP_SITES         쉼표로 여러 사이트(기본 = 일반 + 공공, 2026-11-19 사용자 결정: 한국어, 공공 포함)
+  INCLUDE / EXCLUDE 넣을·뺄 주소 정규식(기본 = 두 사이트의 한국어 /docs/ 만)
   DELAY             페이지 사이 쉬는 초(기본 1.0)   LIMIT  최대 페이지 수(0 = 전부)
   STATE_DIR         상태·원문 보관(기본 ~/.cache/ncp-guide)
   MIN_KEEP_RATIO    목록이 지난번의 이 비율 밑으로 줄면 삭제를 하지 않고 멈춘다(기본 0.8, 사이트 장애 대비)
@@ -31,9 +32,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-SITE = os.getenv("NCP_SITE", "https://guide.ncloud-docs.com").rstrip("/")
+SITES = [s.strip().rstrip("/") for s in os.getenv(
+    "NCP_SITES", os.getenv("NCP_SITE", "https://guide.ncloud-docs.com,https://guide-gov.ncloud-docs.com")).split(",") if s.strip()]
+# 공공 가이드는 일반 가이드와 같은 경로가 많아 문서 이름·본문 앞에 [공공] 을 붙여 구별한다(일반 가이드 이름은 예전 그대로).
+LABEL = {"guide-gov.ncloud-docs.com": "공공", "guide-fin.ncloud-docs.com": "금융"}
 DIFY = os.getenv("DIFY_URL", "https://dify.delvrio.com").rstrip("/") + "/v1"
-INCLUDE = re.compile(os.getenv("INCLUDE", r"^https://guide\.ncloud-docs\.com/docs/"))
+INCLUDE = re.compile(os.getenv("INCLUDE", r"^https://guide(-gov)?\.ncloud-docs\.com/docs/"))
 EXCLUDE = re.compile(os.getenv("EXCLUDE", r"/(en|ja|jp)/|[?&]lang=(en|ja)|release-?notes?"), re.I)
 DELAY = float(os.getenv("DELAY", "1.0"))
 LIMIT = int(os.getenv("LIMIT", "0"))
@@ -94,34 +98,47 @@ def md_url(url):
     return url if path.endswith(".md") else urllib.parse.urlunsplit((p.scheme, p.netloc, path + ".md", p.query, ""))
 
 
+def label(url):
+    return LABEL.get(urllib.parse.urlsplit(url).netloc, "")
+
+
 def doc_name(title, url):
-    return (title + " | " + urllib.parse.urlsplit(url).path)[:250]
+    tag = label(url)
+    return ((f"[{tag}] " if tag else "") + title + " | " + urllib.parse.urlsplit(url).path)[:250]
 
 
 def sha(text):
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-# 1) 목록
-st, idx, _ = get(SITE + "/llms.txt")
-if st != 200:
-    sys.exit(f"[실패] {SITE}/llms.txt 를 못 받았습니다(상태 {st}). 이 컴퓨터에서 사이트가 열리는지 확인하세요")
-pages, seen = [], set()
-for title, url in re.findall(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", idx):
-    url = url.split("#")[0]
-    if url in seen or not INCLUDE.search(url) or EXCLUDE.search(url):
+# 1) 목록(사이트마다 llms.txt). 목록을 못 받은 사이트의 문서는 이번에 지우지 않는다.
+pages, seen, ok_hosts = [], set(), set()
+for site in SITES:
+    st, idx, _ = get(site + "/llms.txt")
+    if st != 200:
+        log(f"[주의] {site}/llms.txt 를 못 받았습니다(상태 {st}). 이 사이트는 이번에 건너뜁니다")
         continue
-    seen.add(url)
-    pages.append((title.strip(), url))
+    ok_hosts.add(urllib.parse.urlsplit(site).netloc)
+    n0 = len(pages)
+    for title, url in re.findall(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", idx):
+        url = url.split("#")[0]
+        if url in seen or not INCLUDE.search(url) or EXCLUDE.search(url):
+            continue
+        seen.add(url)
+        pages.append((title.strip(), url))
+    log(f"{site}: llms.txt 링크 {len(re.findall(r'https?://', idx))}개 중 넣을 페이지 {len(pages) - n0}개")
 if LIMIT:
     pages = pages[:LIMIT]
-log(f"llms.txt 링크 {len(re.findall(r'https?://', idx))}개 중 넣을 페이지 {len(pages)}개")
+log(f"넣을 페이지 합계 {len(pages)}개")
+if not ok_hosts:
+    sys.exit("[실패] llms.txt 를 하나도 못 받았습니다. 이 컴퓨터에서 사이트가 열리는지 확인하세요")
 if not pages:
     sys.exit("[실패] 넣을 페이지가 없습니다. INCLUDE/EXCLUDE 를 확인하세요")
 
 # 2) 미리보기
 if not APPLY:
-    for title, url in pages[:3]:
+    sample = pages[:2] + [p for p in pages if label(p[1])][:2]
+    for title, url in sample:
         st, text, h = get(md_url(url))
         log(f"\n--- {title}  {md_url(url)}  상태 {st}, {len(text)}자, ETag={'있음' if h.get('ETag') else '없음'} ---\n{text[:500]}")
         time.sleep(DELAY)
@@ -143,7 +160,7 @@ if not ds_id:
         sys.exit(f"[실패] 지식 목록 조회 {st}: {res}. API 키를 확인하세요")
     ds_id = next((d["id"] for d in res.get("data", []) if d.get("name") == name), "")
     if not ds_id:
-        st, res = dify("POST", "/datasets", {"name": name, "description": f"{SITE} 사용자 가이드(llms.txt + .md, 주 1회 갱신)",
+        st, res = dify("POST", "/datasets", {"name": name, "description": f"{', '.join(SITES)} 사용자 가이드(llms.txt + .md, 주 1회 갱신)",
                                              "indexing_technique": "high_quality", "permission": "only_me"})
         if st not in (200, 201):
             sys.exit(f"[실패] 지식 베이스 만들기 {st}: {res}")
@@ -206,7 +223,9 @@ for n, (title, url) in enumerate(pages, 1):
         docs[url] = {**rec, "doc_id": doc_id, "etag": h.get("ETag", ""), "modified": h.get("Last-Modified", "")}
         time.sleep(DELAY)
         continue
-    body = {"name": name_, "text": f"# {title}\n원문: {url}\n\n{text}", "doc_form": "hierarchical_model",
+    tag = label(url)
+    head = f"# {'[' + tag + ' 가이드] ' if tag else ''}{title}\n원문: {url}\n\n"
+    body = {"name": name_, "text": head + text, "doc_form": "hierarchical_model",
             "doc_language": "Korean", "indexing_technique": "high_quality", "process_rule": PROCESS_RULE}
     if doc_id:
         st, res = dify("POST", f"/datasets/{ds_id}/documents/{doc_id}/update-by-text", body)
@@ -236,11 +255,12 @@ for n, (title, url) in enumerate(pages, 1):
 save_state()
 
 # 5) 사라진 페이지 삭제(목록이 갑자기 크게 줄면 사이트 문제로 보고 지우지 않는다)
-gone = [u for u in docs if u not in seen]
+mine = [u for u in docs if urllib.parse.urlsplit(u).netloc in ok_hosts]   # 이번에 목록을 받은 사이트 것만
+gone = [u for u in mine if u not in seen]
 removed = 0
 if gone and not LIMIT:
-    if len(pages) < MIN_KEEP * max(1, len(docs)):
-        log(f"[주의] 목록이 지난번 {len(docs)}개 → 이번 {len(pages)}개로 크게 줄어 삭제는 건너뜁니다")
+    if len(pages) < MIN_KEEP * max(1, len(mine)):
+        log(f"[주의] 목록이 지난번 {len(mine)}개 → 이번 {len(pages)}개로 크게 줄어 삭제는 건너뜁니다")
     else:
         for u in gone:
             st, _ = dify("DELETE", f"/datasets/{ds_id}/documents/{docs[u]['doc_id']}")

@@ -4,7 +4,7 @@
 #   SAVE_APP_KEY=ncp-guide-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/ncp-guide-chat.yml "VPC 만드는 방법"
 # install_app.py 가 __NCP_DATASET_ID__ 를 Secret dify/ncp-guide-sync 의 dataset_id 로 바꾸고, 앱 키를 bbb Secret 으로 저장한다.
 app:
-  description: NAVER Cloud Platform 사용자 가이드만 찾아 답하는 챗봇(다른 지식과 분리)
+  description: NAVER Cloud Platform 사용자 가이드(일반·공공)만 찾아 답하는 챗봇(다른 지식과 분리)
   icon: ☁️
   icon_background: '#DCFCE7'
   mode: advanced-chat
@@ -93,7 +93,7 @@ workflow:
         multiple_retrieval_config:
           reranking_enable: false
           reranking_mode: reranking_model
-          top_k: 6
+          top_k: 8
         query_variable_selector:
         - sys
         - query
@@ -144,6 +144,7 @@ workflow:
             - <가이드> 에 있는 내용만 근거로 한국어로 답한다. 없으면 "가이드에서 찾지 못했습니다"라고 말하고 짐작하지 않는다.
             - 콘솔 조작은 메뉴 경로(예: Console > Services > Networking > VPC)와 순서 번호 단계로 쓴다.
             - 설정값·제한·요금 숫자는 가이드에 적힌 그대로 옮긴다.
+            - 문단 제목에 [공공 가이드] 가 붙은 것은 공공기관용(gov) 가이드다. 일반과 공공 내용이 다르면 나눠서 말하고, 질문이 공공을 말하지 않으면 일반 가이드를 먼저 쓴다.
             - 출처 목록은 쓰지 않는다(화면이 찾은 문서 제목·원문 링크를 따로 보여 준다).
 
             <가이드>
