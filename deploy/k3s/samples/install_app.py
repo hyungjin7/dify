@@ -140,8 +140,8 @@ if "__NCP_DATASET_ID__" in dsl:   # NCP 가이드 앱: 전용 지식 베이스 i
 for ds_name in sorted(set(re.findall(r"__DS:([^_\n<>]+)__", dsl))):   # 기술 문서 앱: 지식 베이스 이름 → id
     st, res = call("GET", "/datasets?page=1&limit=100&keyword=" + urllib.request.quote(ds_name))
     ds = next((d["id"] for d in (res or {}).get("data", []) if d.get("name") == ds_name), "") if st == 200 else ""
-    need(bool(ds), f"지식 베이스 '{ds_name}' 가 없습니다. 먼저 첫 적재를 돌리세요: "
-                   "kubectl -n dify create job --from=cronjob/tech-docs-sync tech-docs-first")
+    need(bool(ds), f"지식 베이스 '{ds_name}' 가 없습니다. 첫 적재가 끝나야 합니다: "
+                   "kubectl -n dify logs -f deploy/knowledge-collector 로 진행을 보세요")
     dsl = dsl.replace(f"__DS:{ds_name}__", ds)
     print(f"    → {ds_name} = {ds}")
 dsl = dsl.replace("name: gemma-4-E4B-it-MLX-8bit", f"name: {json.dumps(pick[1])}", 1)

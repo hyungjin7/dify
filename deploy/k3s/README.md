@@ -62,6 +62,13 @@ bbb 의 RAG(뉴스·YouTube 색인, alpha-98 GPU)를 Dify 에서 두 가지로 �
    - Rerank: 모델 `bge-reranker-v2-m3`, 같은 Base URL
    - GPU 는 rag 색인과 한 줄로 번갈아 쓴다. 들어올 수 있는 곳은 bbb `app-embed.yaml` NetworkPolicy(dify-plugin-daemon 만).
 
+## 지식 출처 모음 수집기 (2026-11-19)
+- 출처 목록 정본은 bbb agent 표 `knowledge_sources`(화면 ccc › 지식 출처 모음). 코드에 출처를 적지 않는다.
+- `knowledge-collector`(Deployment, 1개)가 agent 에게 할 일을 받아 `samples/tech_docs_to_dify.py` 로 받는다(출처 1개 = Dify 지식 1개, 바뀐 것만).
+  추가 마법사의 미리보기(공식 MCP → llms.txt → GitHub 원문 → 사이트 따라가기)도 여기서 한다.
+- 처음 한 번: `python3 deploy/k3s/samples/knowledge_collector_setup.py`(키 Secret 두 곳) → `kubectl apply -k deploy/k3s`
+  → `kubectl -n dify delete cronjob tech-docs-sync`(예전 주간 작업). NCP 가이드는 그대로 CronJob `ncp-guide-sync`.
+
 ## 메일(팀 초대·비밀번호 재설정)
 
 bbb 홈페이지와 같은 Gmail(Secret `bbb-namespace/website-mail-secret`)을 쓴다. `provision.py --apply` 가 Secret `dify/dify-mail`(SMTP_USERNAME·SMTP_PASSWORD·MAIL_DEFAULT_SEND_FROM)을 만들고, 설정은 `config.yaml`(smtp.gmail.com:587 STARTTLS). 바꾼 뒤 `kubectl -n dify rollout restart deploy/dify-api deploy/dify-worker`.
