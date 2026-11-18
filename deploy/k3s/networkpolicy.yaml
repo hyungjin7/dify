@@ -102,5 +102,12 @@ spec:
       podSelector:
         matchLabels:
           app: bbb-news
+    # bbb agent(ccc › NCP 가이드 묻기, 2026-11-18)가 /v1/chat-messages 를 부른다
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: bbb-namespace
+      podSelector:
+        matchLabels:
+          app: bbb-agent
     ports:
     - {protocol: TCP, port: 5001}

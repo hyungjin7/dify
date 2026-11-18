@@ -7,6 +7,7 @@ kubectl 되는 곳(맥북)에서:
   APP_ID=<앱 id> python3 deploy/k3s/samples/install_app.py <앱.yml>      # 화면 주소 /app/<id>/workflow 의 앱을 덮어쓰기
   INPUTS='{"period": "30d"}' python3 deploy/k3s/samples/install_app.py <앱.yml> "질문"   # 시작 입력값
   SAVE_APP_KEY=news-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/news-hourly-summary-workflow.yml  # 앱 키를 bbb Secret 으로
+  SAVE_APP_KEY=ncp-guide-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/ncp-guide-chat.yml "VPC 만드는 방법"  # ccc NCP 가이드
 
 하는 일(다시 돌려도 같은 이름 앱을 덮어쓴다):
   1) DSL 이 rag_api_key·news_api_key·telegram_* 을 쓰면 그 값(Secret bbb-namespace/rag-dify-key·news-dify-key·news-telegram)을 kubectl 로 읽어 넣는다
@@ -124,6 +125,15 @@ step(4, "앱 가져오기")
 dsl = open(DSL, encoding="utf-8").read()
 for var, val in env_keys.items():   # 환경 변수(비밀) 값 채우기: "name: <var>" 다음의 빈 value
     dsl = dsl.replace(f"    name: {var}\n    value: ''\n", f"    name: {var}\n    value: {json.dumps(val)}\n", 1)
+if "__NCP_DATASET_ID__" in dsl:   # NCP 가이드 앱: 전용 지식 베이스 id(ncp_guide_setup.py 가 Secret 에 저장)
+    ds = os.getenv("DATASET_ID", "").strip()
+    if not ds:
+        r_ = subprocess.run(["kubectl", "-n", "dify", "get", "secret", "ncp-guide-sync", "-o", "jsonpath={.data.dataset_id}"],
+                            capture_output=True, text=True)
+        ds = base64.b64decode(r_.stdout).decode() if r_.returncode == 0 and r_.stdout else ""
+    need(bool(ds), "NCP 지식 베이스 id 가 없습니다. 먼저 python3 deploy/k3s/samples/ncp_guide_setup.py")
+    dsl = dsl.replace("__NCP_DATASET_ID__", ds)
+    print(f"    → 지식 베이스 {ds}")
 dsl = dsl.replace("name: gemma-4-E4B-it-MLX-8bit", f"name: {json.dumps(pick[1])}", 1)
 dsl = dsl.replace("provider: langgenius/openai_api_compatible/openai_api_compatible", f"provider: {json.dumps(pick[0])}", 1)
 st, apps = call("GET", "/apps?page=1&limit=100&name=" + urllib.request.quote(APP_NAME))
@@ -162,8 +172,11 @@ if save_as:
     subprocess.run(["kubectl", "apply", "-f", "-"], check=True, capture_output=True, input=json.dumps(
         {"apiVersion": "v1", "kind": "Secret", "type": "Opaque",
          "metadata": {"name": save_as, "namespace": "bbb-namespace"}, "stringData": {"key": tok}}).encode())
-    subprocess.run(["kubectl", "-n", "bbb-namespace", "rollout", "restart", "deploy/news"], check=True, capture_output=True)
-    print(f"    → 앱 키를 Secret bbb-namespace/{save_as} 에 저장하고 news 를 다시 띄웠습니다")
+    user_of = {"news-dify-app": "news", "ncp-guide-dify-app": "agent"}   # 이 키를 쓰는 bbb 서비스
+    svc = user_of.get(save_as)
+    if svc:
+        subprocess.run(["kubectl", "-n", "bbb-namespace", "rollout", "restart", f"deploy/{svc}"], check=True, capture_output=True)
+    print(f"    → 앱 키를 Secret bbb-namespace/{save_as} 에 저장" + (f"하고 {svc} 를 다시 띄웠습니다" if svc else ""))
 
 # 7) 실제 질문
 step(7, f"질문: {QUESTION}")

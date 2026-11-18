@@ -1,0 +1,192 @@
+# NCP 가이드 묻기(2026-11-18 사용자 결정: 기존 지식과 완전 분리, ccc 메뉴에서 사용).
+# 지식 베이스 "NCP 사용자 가이드" 하나만 검색 → oMLX gemma 가 근거 번호·원문 주소와 함께 답하는 챗플로우.
+# 준비: samples/ncp_guide_setup.py(지식 베이스·Secret) → 첫 적재 Job → 아래로 올리기
+#   SAVE_APP_KEY=ncp-guide-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/ncp-guide-chat.yml "VPC 만드는 방법"
+# install_app.py 가 __NCP_DATASET_ID__ 를 Secret dify/ncp-guide-sync 의 dataset_id 로 바꾸고, 앱 키를 bbb Secret 으로 저장한다.
+app:
+  description: NAVER Cloud Platform 사용자 가이드만 찾아 답하는 챗봇(다른 지식과 분리)
+  icon: ☁️
+  icon_background: '#DCFCE7'
+  mode: advanced-chat
+  name: NCP 가이드 묻기
+  use_icon_as_answer_icon: false
+kind: app
+version: 0.7.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: NAVER Cloud Platform 사용자 가이드에서 찾아 답해 드립니다. 예) VPC 에서 서브넷 만드는 방법은?
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions:
+    - VPC 에서 서브넷 만드는 방법은?
+    - Server 생성할 때 스토리지 종류 차이는?
+    - Object Storage 버킷 접근 권한 설정 방법은?
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        sourceType: start
+        targetType: knowledge-retrieval
+      id: start-kr
+      source: start
+      sourceHandle: source
+      target: kr
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: knowledge-retrieval
+        targetType: llm
+      id: kr-llm
+      source: kr
+      sourceHandle: source
+      target: llm
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: llm
+        targetType: answer
+      id: llm-answer
+      source: llm
+      sourceHandle: source
+      target: answer
+      targetHandle: target
+      type: custom
+    nodes:
+    - data:
+        desc: 질문만 받는다
+        selected: false
+        title: 시작
+        type: start
+        variables: []
+      height: 54
+      id: start
+      position:
+        x: 80
+        y: 280
+      positionAbsolute:
+        x: 80
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        dataset_ids:
+        - __NCP_DATASET_ID__
+        desc: NCP 사용자 가이드 지식 베이스만 찾는다
+        multiple_retrieval_config:
+          reranking_enable: false
+          reranking_mode: reranking_model
+          top_k: 6
+        query_variable_selector:
+        - sys
+        - query
+        retrieval_mode: multiple
+        selected: false
+        title: 가이드 찾기
+        type: knowledge-retrieval
+      height: 92
+      id: kr
+      position:
+        x: 380
+        y: 280
+      positionAbsolute:
+        x: 380
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: true
+          variable_selector:
+          - kr
+          - result
+        desc: 찾은 가이드만 근거로 답한다
+        memory:
+          query_prompt_template: '{{#sys.query#}}'
+          role_prefix:
+            assistant: ''
+            user: ''
+          window:
+            enabled: true
+            size: 6
+        model:
+          completion_params:
+            max_tokens: 3000
+            temperature: 0.2
+          mode: chat
+          name: gemma-4-E4B-it-MLX-8bit
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: sys-prompt
+          role: system
+          text: |-
+            너는 NAVER Cloud Platform(NCP) 사용자 가이드 안내원이다. 아래 <가이드> 는 사용자 가이드에서 질문으로 찾은 문단들이다.
+            규칙:
+            - <가이드> 에 있는 내용만 근거로 한국어로 답한다. 없으면 "가이드에서 찾지 못했습니다"라고 말하고 짐작하지 않는다.
+            - 콘솔 조작은 메뉴 경로(예: Console > Services > Networking > VPC)와 순서 번호 단계로 쓴다.
+            - 설정값·제한·요금 숫자는 가이드에 적힌 그대로 옮긴다.
+            - 출처 목록은 쓰지 않는다(화면이 찾은 문서 제목·원문 링크를 따로 보여 준다).
+
+            <가이드>
+            {{#context#}}
+            </가이드>
+        selected: false
+        title: 답변(LLM)
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 98
+      id: llm
+      position:
+        x: 680
+        y: 280
+      positionAbsolute:
+        x: 680
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        answer: '{{#llm.text#}}'
+        desc: ''
+        selected: false
+        title: 답변
+        type: answer
+        variables: []
+      height: 103
+      id: answer
+      position:
+        x: 980
+        y: 280
+      positionAbsolute:
+        x: 980
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.8
