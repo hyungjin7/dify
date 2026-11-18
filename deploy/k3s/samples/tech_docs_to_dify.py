@@ -5,7 +5,7 @@ NCP 가이드(ncp_guide_to_dify.py)와 같은 방식이고(2026-11-18 사용자 
   "기술문서 · Kubernetes" / "· PostgreSQL" / "· Traefik" / "· Argo CD" / "· Helm"
   → 한 문서만 골라 묻거나(정확), 다섯 개를 함께 물을 수 있다. 다른 지식(rag·NCP)과 섞이지 않는다.
 
-가져오는 방법 5가지(kind, 2026-11-19 지식 출처 모음 설계 1단계 — 출처를 더하면 SOURCES 에 한 줄만 더한다):
+가져오는 방법(kind, 2026-11-19 지식 출처 모음 — 출처는 ccc › 지식 출처 모음 화면에서 더한다):
   - git:   문서 원문(md·mdx·rst)이 GitHub 저장소에 있다 → 저장소 묶음(tar.gz) 1번 받기(ref 여러 개면 차례로 시도)
   - html:  같은 폴더의 *.html 을 따라간다(PostgreSQL, 릴리스 노트 제외)
   - crawl: 시작 주소 아래(prefix)의 링크를 따라가며 본문(main·article·알려진 본문 칸)만 뽑는다. max 쪽 상한, 1초에 1쪽
@@ -20,9 +20,9 @@ GCP·AWS·Azure 문서는 긁지 않는다: 각 회사가 공식 MCP 검색을 �
 목록에서 사라짐 → 삭제(목록이 지난번의 MIN_KEEP_RATIO 밑으로 줄면 사이트 문제로 보고 지우지 않는다).
 진행 기록은 문서 하나 넣을 때마다 저장한다(중간에 끊어도 다시 돌리면 이어서, 중복 없음).
 
-  python3 deploy/k3s/samples/tech_docs_to_dify.py                       # 미리보기(문서별 페이지 수·샘플)
-  python3 deploy/k3s/samples/tech_docs_to_dify.py --apply               # 다섯 개 모두 적재/갱신
-  SOURCES=helm,traefik python3 deploy/k3s/samples/tech_docs_to_dify.py --apply   # 일부만
+  보통은 상주 수집기(Deployment knowledge-collector)가 돌린다. 손으로 돌릴 때:
+  SOURCES_FILE=src.json python3 deploy/k3s/samples/tech_docs_to_dify.py           # 미리보기(문서별 페이지 수·샘플)
+  SOURCES_FILE=src.json python3 deploy/k3s/samples/tech_docs_to_dify.py --apply   # 적재/갱신
 환경 변수: DIFY_DATASET_KEY(지식 API 키 = Secret dify/ncp-guide-sync 의 key), DIFY_URL, STATE_DIR(기본 ~/.cache/tech-docs),
   SOURCES(기본 전부), DELAY(Dify 넣기 사이 초, 기본 0.2), PAGE_DELAY(PostgreSQL 페이지 사이 초, 기본 0.5), LIMIT(문서별 최대, 0=전부)
   EMBEDDING_MODEL / EMBEDDING_PROVIDER(새 지식 베이스의 임베딩 모델, 없으면 "NCP 사용자 가이드" 와 같은 모델)
@@ -51,44 +51,18 @@ MIN_KEEP = float(os.getenv("MIN_KEEP_RATIO", "0.8"))
 APPLY = "--apply" in sys.argv
 UA = {"User-Agent": "delvrio-docs-loader/1.0 (internal knowledge base)"}
 
-# 문서 목록. kind=git: 저장소 묶음 안의 dirs 아래 .md/.mdx → base + 경로. kind=html: 같은 폴더의 *.html 을 따라간다.
-SOURCES = {
-    "kubernetes": {"name": "Kubernetes", "kind": "git", "repo": "kubernetes/website", "ref": "main",
-                   "dirs": ["content/en/docs"], "base": "https://kubernetes.io/docs/",
-                   "exclude": r"^(reference/(kubernetes-api|generated|config-api|command-line-tools-reference)|contribute|test)/"},
-    "argocd": {"name": "Argo CD", "kind": "git", "repo": "argoproj/argo-cd", "ref": "stable",
-               "dirs": ["docs"], "base": "https://argo-cd.readthedocs.io/en/stable/",
-               "exclude": r"^(proposals|snippets|assets)/"},
-    "helm": {"name": "Helm", "kind": "git", "repo": "helm/helm-www", "ref": "main",
-             "dirs": ["docs", "content/en/docs"], "base": "https://helm.sh/docs/",
-             "exclude": r"^(blog|community)/"},
-    "traefik": {"name": "Traefik", "kind": "git", "repo": "traefik/traefik", "ref": "master",
-                "dirs": ["docs/content"], "base": "https://doc.traefik.io/traefik/",
-                "exclude": r"^(assets|includes|overrides)/"},
-    "postgresql": {"name": "PostgreSQL", "kind": "html", "base": "https://www.postgresql.org/docs/current/",
-                   "start": "index.html", "exclude": r"^release-\d"},
-    # ---- 2026-11-19 사용자 요청: 클라우드 교과서·SRE·보안·Linux·CNCF·국내 SaaS ----
-    "google-sre": {"name": "Google SRE 책", "kind": "crawl",
-                   "start": ["https://sre.google/sre-book/table-of-contents/", "https://sre.google/workbook/table-of-contents/"],
-                   "prefix": ["https://sre.google/sre-book/", "https://sre.google/workbook/"], "max": 300},
-    "twelve-factor": {"name": "The Twelve-Factor App", "kind": "git", "repo": "twelve-factor/twelve-factor",
-                      "ref": ["main", "master"], "dirs": ["content/ko", "content/en"], "base": "https://12factor.net/ko/",
-                      "suffix": "", "lang": "Korean"},
-    "mit-6.5840": {"name": "MIT 6.5840 분산 시스템", "kind": "links",
-                   "index": "https://pdos.csail.mit.edu/6.824/schedule.html", "pattern": r"notes/[^\"'#?]+\.txt$"},
-    "owasp-cheatsheets": {"name": "OWASP Cheat Sheet Series", "kind": "git", "repo": "OWASP/CheatSheetSeries",
-                          "ref": ["master", "main"], "dirs": ["cheatsheets"],
-                          "base": "https://cheatsheetseries.owasp.org/cheatsheets/", "suffix": ".html"},
-    "archwiki": {"name": "ArchWiki", "kind": "wiki", "base": "https://wiki.archlinux.org/", "max": 1500,
-                 "categories": ["System administration", "Networking", "Storage", "Boot process", "Security",
-                                "Virtualization", "Kernel", "Network configuration", "File systems"]},
-    "cilium": {"name": "Cilium", "kind": "git", "repo": "cilium/cilium", "ref": ["main"], "dirs": ["Documentation"],
-               "base": "https://docs.cilium.io/en/stable/", "exclude": r"^(_|cmdref/|contributing/|spelling)"},
-    "prometheus": {"name": "Prometheus", "kind": "git", "repo": "prometheus/prometheus", "ref": ["main"], "dirs": ["docs"],
-                   "base": "https://prometheus.io/docs/prometheus/latest/", "exclude": r"^(images|command-line)/"},
-    "tosspayments": {"name": "토스페이먼츠 개발자 문서", "kind": "llms", "site": "https://docs.tosspayments.com",
-                     "lang": "Korean", "max": 1500},
-}
+# 문서 목록의 정본은 bbb agent 의 지식 출처 모음 표(knowledge_sources, 2026-11-19 사용자 결정 — 코드 목록은 없앤다).
+# 상주 수집기(knowledge_collector.py)가 그 표에서 할 일을 받아 아래 sync() 를 부른다.
+# 손으로 돌릴 때는 출처 설정을 JSON 파일로 준다: SOURCES_FILE=src.json (목록 [{"id","name","kind",…설정}] — 화면 "수집 설정"과 같은 모양)
+def load_sources():
+    path = os.getenv("SOURCES_FILE", "").strip()
+    if not path:
+        return {}
+    rows = json.load(open(path, encoding="utf-8"))
+    return {r["id"]: r for r in (rows if isinstance(rows, list) else [rows])}
+
+
+SOURCES = load_sources()
 DATASET_PREFIX = "기술문서 · "
 
 PROCESS_RULE = {"mode": "hierarchical", "rules": {
@@ -509,13 +483,13 @@ def sync(key, src):
     log(f"[{src['name']}] 넣을 페이지 {len(pages)}개")
     if not pages:
         log(f"[{src['name']}] 페이지가 없어 건너뜁니다(저장소 폴더 구조가 바뀌었는지 확인)")
-        return {"fail": 1}
+        return {"fail": 1, "pages": 0, "message": "페이지가 없음(주소·폴더 구조 확인)"}
     if not APPLY:
         for title, url, text in pages[:2]:
             log(f"  --- {title}  {url}  {len(text)}자\n  {text[:300]!r}")
         return {}
 
-    name = DATASET_PREFIX + src["name"]
+    name = src.get("dataset") or DATASET_PREFIX + src["name"]
     ds = find_dataset(name)
     if not ds:
         model, provider = embedding()
@@ -595,6 +569,7 @@ def sync(key, src):
                     docs.pop(u)
             save()
     log(f"[{src['name']}] 끝: 추가 {c['added']} · 교체 {c['updated']} · 그대로 {c['same']} · 삭제 {c['removed']} · 실패 {c['fail']}")
+    c.update(dataset_id=ds_id, pages=len(docs))
     return c
 
 
