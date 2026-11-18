@@ -18,10 +18,14 @@ resources:
 - ingress.yaml
 - networkpolicy.yaml
 - ncp-guide-sync.yaml
+- tech-docs-sync.yaml
 configMapGenerator:
 - name: ncp-guide-sync
   files:
   - samples/ncp_guide_to_dify.py
+- name: tech-docs-sync
+  files:
+  - samples/tech_docs_to_dify.py
 - name: dify-nginx
   files:
   - files/nginx/default.conf

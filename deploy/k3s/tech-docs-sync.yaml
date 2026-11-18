@@ -1,0 +1,47 @@
+# 인프라 기술 문서(Kubernetes·PostgreSQL·Traefik·Argo CD·Helm) → Dify 지식 베이스 주간 갱신(2026-11-18 사용자 요청, NCP 가이드와 같은 방식).
+# 매주 일요일 04:00 KST(NCP 03:00 다음). 문서마다 지식 베이스 "기술문서 · <이름>" 를 따로 둔다(samples/tech_docs_to_dify.py).
+# 키는 NCP 와 같은 지식 API 키(Secret ncp-guide-sync). 상태는 NCP 와 같은 PVC ncp-guide-state 의 tech/ 폴더.
+# 첫 적재: kubectl -n dify create job --from=cronjob/tech-docs-sync tech-docs-first
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tech-docs-sync
+spec:
+  schedule: "0 4 * * 0"
+  timeZone: Asia/Seoul
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 21600
+      template:
+        metadata:
+          labels:
+            app: tech-docs-sync
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: sync
+            image: python:3.12-slim
+            command: ["python", "/app/tech_docs_to_dify.py", "--apply"]
+            env:
+            - {name: DIFY_URL, value: "http://dify-api:5001"}
+            - {name: STATE_DIR, value: /state/tech}
+            - {name: PYTHONUNBUFFERED, value: "1"}
+            - name: DIFY_DATASET_KEY
+              valueFrom: {secretKeyRef: {name: ncp-guide-sync, key: key, optional: true}}
+            resources:
+              requests: {cpu: 50m, memory: 128Mi}
+              limits: {cpu: 500m, memory: 512Mi}
+            volumeMounts:
+            - {name: app, mountPath: /app}
+            - {name: state, mountPath: /state}
+          volumes:
+          - name: app
+            configMap:
+              name: tech-docs-sync
+          - name: state
+            persistentVolumeClaim:
+              claimName: ncp-guide-state
