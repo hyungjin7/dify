@@ -129,10 +129,12 @@ if not APPLY:
     sys.exit(0)
 
 # 3) 지식 베이스
-KEY = (os.getenv("DIFY_DATASET_KEY") or getpass.getpass("Dify 지식 API 키: ")).strip()
+KEY = os.getenv("DIFY_DATASET_KEY", "").strip()
+if not KEY and sys.stdin.isatty():   # Job(터미널 없음)에서는 묻지 않는다
+    KEY = getpass.getpass("Dify 지식 API 키: ").strip()
 if not KEY:
-    log("지식 API 키가 없어 건너뜁니다(Secret dify/ncp-guide-sync 를 먼저 만드세요: samples/ncp_guide_setup.py)")
-    sys.exit(0)
+    sys.exit("[실패] 지식 API 키가 없습니다. Secret dify/ncp-guide-sync 가 없으니 먼저 "
+             "python3 deploy/k3s/samples/ncp_guide_setup.py 를 끝까지 돌리세요")
 ds_id = os.getenv("DATASET_ID", "").strip()
 name = os.getenv("DATASET_NAME", "NCP 사용자 가이드")
 if not ds_id:
