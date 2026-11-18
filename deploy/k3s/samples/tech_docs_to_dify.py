@@ -12,6 +12,8 @@ NCP 가이드(ncp_guide_to_dify.py)와 같은 방식이고(2026-11-18 사용자 
   - links: 목록 한 쪽에서 정해진 모양(pattern)의 링크만 받는다(MIT 6.5840 강의 노트 .txt)
   - wiki:  MediaWiki 분류(categories)에 든 문서를 원문 위키텍스트(action=raw)로 받는다(ArchWiki)
   - llms:  사이트의 /llms.txt 목록 → 각 쪽 .md(없으면 HTML 본문)
+GCP·AWS·Azure 문서는 긁지 않는다: 각 회사가 공식 MCP 검색을 무료로 열어 두어 bbb 골라 묻기가 질문 때 바로 부른다
+(사용자 결정 2026-11-19 "이미 제공하면 가져다 쓴다", bbb ncp_guide.EXTERNAL).
 저작권: 사내 참고용으로만 쓰고, 답에는 원문 링크를 붙인다. roadmap.sh 는 "개인 사용만" 라이선스라 넣지 않는다(사용자 결정 대기 2026-11-19).
 
 갱신 규칙(상태 STATE_DIR/<문서>.json = 주소 → 문서 id·원문 지문): 새 주소 → 추가, 원문이 바뀜 → 그 문서만 교체,
@@ -66,15 +68,6 @@ SOURCES = {
     "postgresql": {"name": "PostgreSQL", "kind": "html", "base": "https://www.postgresql.org/docs/current/",
                    "start": "index.html", "exclude": r"^release-\d"},
     # ---- 2026-11-19 사용자 요청: 클라우드 교과서·SRE·보안·Linux·CNCF·국내 SaaS ----
-    "azure-patterns": {"name": "Azure 클라우드 디자인 패턴", "kind": "git", "repo": "MicrosoftDocs/architecture-center",
-                       "ref": ["main", "master"], "dirs": ["docs/patterns"],
-                       "base": "https://learn.microsoft.com/en-us/azure/architecture/patterns/", "suffix": ""},
-    "gcp-architecture": {"name": "Google Cloud Architecture Center", "kind": "crawl",
-                         "start": "https://docs.cloud.google.com/architecture/", "max": 1500,
-                         "exclude": r"/(release-notes|support)(/|$)"},
-    "aws-well-architected": {"name": "AWS Well-Architected", "kind": "crawl",
-                             "start": "https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html",
-                             "prefix": "https://docs.aws.amazon.com/wellarchitected/latest/framework/", "max": 800},
     "google-sre": {"name": "Google SRE 책", "kind": "crawl",
                    "start": ["https://sre.google/sre-book/table-of-contents/", "https://sre.google/workbook/table-of-contents/"],
                    "prefix": ["https://sre.google/sre-book/", "https://sre.google/workbook/"], "max": 300},
