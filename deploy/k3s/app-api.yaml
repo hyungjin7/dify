@@ -16,9 +16,16 @@ spec:
       labels:
         app: dify-api
     spec:
-      # 메모리 예약을 노드별로 분산한다(2026-11-20).
-      nodeSelector:
-        kubernetes.io/hostname: alpha
+      # 일반 API는 GPU 노드를 비우고 worker node-01에 우선 배치한다.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values: [bbb-node-01]
       enableServiceLinks: false
       imagePullSecrets:   # CI 가 우리 이미지(gitea 레지스트리)로 바꿔 끼울 때 필요
       - name: gitea-registry-auth
@@ -114,9 +121,6 @@ spec:
       labels:
         app: dify-api-ws
     spec:
-      # 메모리 예약을 노드별로 분산한다(2026-11-20).
-      nodeSelector:
-        kubernetes.io/hostname: alpha-99
       enableServiceLinks: false
       imagePullSecrets:   # CI 가 우리 이미지(gitea 레지스트리)로 바꿔 끼울 때 필요
       - name: gitea-registry-auth
