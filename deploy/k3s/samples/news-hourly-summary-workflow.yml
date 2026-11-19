@@ -210,7 +210,7 @@ workflow:
           required: false
           type: text-input
           variable: count
-          default: '20'
+          default: '100'
         - label: 시각(KST)
           max_length: 20
           options: []
@@ -237,9 +237,9 @@ workflow:
         body:
           data:
           - type: text
-            value: '{"url": "https://stock.naver.com/news/mainnews", "wait_until": "networkidle", "wait_ms": 2000, "include_links": true}'
+            value: '{"url": "https://stock.naver.com/news/mainnews", "wait_until": "networkidle", "wait_ms": 2000, "include_links": true, "scroll_times": 20, "scroll_wait_ms": 1200, "min_links": 260}'
           type: json
-        desc: 목록 화면 글자와 링크
+        desc: 목록 화면 글자와 링크(아래로 내려 더 불러옴, 최대 100건)
         headers: Content-Type:application/json
         method: post
         params: ''
@@ -251,7 +251,7 @@ workflow:
         ssl_verify: false
         timeout:
           max_connect_timeout: 10
-          max_read_timeout: 90
+          max_read_timeout: 180
           max_write_timeout: 30
         title: 주요뉴스 목록 열기(ego)
         type: http-request
@@ -292,9 +292,9 @@ workflow:
               except ValueError:
                   page = {}
               try:
-                  n = max(1, min(40, int(count or 20)))
+                  n = max(1, min(100, int(count or 100)))   # 상한 100건(2026-11-19 사용자 지시)
               except ValueError:
-                  n = 20
+                  n = 100
               if status_code != 200 or not page.get("text"):
                   return {"check_body": json.dumps({"items": []}), "note": f"목록 화면을 못 읽었습니다(상태 {status_code})"}
               cands = []
