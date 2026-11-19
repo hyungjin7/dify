@@ -146,9 +146,29 @@ for ds_name in sorted(set(re.findall(r"__DS:([^_\n<>]+)__", dsl))):   # 기술 �
     print(f"    → {ds_name} = {ds}")
 dsl = dsl.replace("name: gemma-4-E4B-it-MLX-8bit", f"name: {json.dumps(pick[1])}", 1)
 dsl = dsl.replace("provider: langgenius/openai_api_compatible/openai_api_compatible", f"provider: {json.dumps(pick[0])}", 1)
-st, apps = call("GET", "/apps?page=1&limit=100&name=" + urllib.request.quote(APP_NAME))
-existing = next((a["id"] for a in (apps or {}).get("data", []) if a.get("name") == APP_NAME), None) if st == 200 else None
-existing = os.getenv("APP_ID") or existing   # 화면 주소 /app/<id>/workflow 의 id 를 주면 그 앱을 덮어쓴다
+# 덮어쓸 앱 찾기(새 앱을 만들지 않게, 2026-11-19 사용자 지시 "만들지 말고 업데이트"):
+#   ① APP_ID  ② SAVE_APP_KEY Secret 에 저장된 키를 가진 앱(이름을 바꿔도 찾는다)  ③ 같은 이름 앱
+st, apps = call("GET", "/apps?page=1&limit=100")
+all_apps = (apps or {}).get("data", []) if st == 200 else []
+existing, how = os.getenv("APP_ID"), "APP_ID"
+_save = os.getenv("SAVE_APP_KEY", "").strip()
+if not existing and _save:
+    r_ = subprocess.run(["kubectl", "-n", "bbb-namespace", "get", "secret", _save, "-o", "jsonpath={.data.key}"],
+                        capture_output=True, text=True)
+    saved_tok = base64.b64decode(r_.stdout).decode() if r_.returncode == 0 and r_.stdout else ""
+    for a in all_apps if saved_tok else []:
+        st_k, ks = call("GET", f"/apps/{a['id']}/api-keys")
+        if st_k == 200 and any(k.get("token") == saved_tok for k in (ks or {}).get("data", [])):
+            existing, how = a["id"], f"Secret {_save} 의 키를 가진 앱 '{a.get('name')}'"
+            break
+same = [a for a in all_apps if a.get("name") == APP_NAME]
+if not existing and same:
+    existing, how = same[0]["id"], f"같은 이름 '{APP_NAME}'"
+dups = [a["id"] for a in same if a["id"] != existing]
+if dups:
+    print(f"    → 같은 이름 앱이 {len(dups)}개 더 있습니다(지워도 됨): " + ", ".join(f"{BASE}/app/{d}/workflow" for d in dups))
+if existing:
+    print(f"    → 덮어쓸 앱: {how}")
 body = {"mode": "yaml-content", "yaml_content": dsl}
 if existing:
     body["app_id"] = existing
