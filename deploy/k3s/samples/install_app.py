@@ -201,8 +201,15 @@ if save_as == "news-dify-app":
              "'http://news-service.bbb-namespace.svc.cluster.local:8005/api/v1/news/hourly-summary/run?force=true',"
              "method='POST',headers={'X-Service-Name':os.environ['SERVICE_AUTH_NAME'],"
              "'X-Service-Key':os.environ['SERVICE_AUTH_KEY']}),timeout=900);print(r.read().decode())")
-    out = subprocess.run(["kubectl", "-n", "bbb-namespace", "exec", "deploy/dworker", "--", "python", "-c", code_],
-                         capture_output=True, text=True)
+    # 다시 띄운 직후에는 끝나 가는 옛 Pod 로 연결이 가서 'Connection refused' 가 날 수 있다(2026-11-19 실측, 21.7초 실패).
+    # 그때만 10초씩 쉬며 6번까지 다시 부른다. 다른 실패는 그대로 보여 준다.
+    for attempt in range(6):
+        out = subprocess.run(["kubectl", "-n", "bbb-namespace", "exec", "deploy/dworker", "--", "python", "-c", code_],
+                             capture_output=True, text=True)
+        if out.returncode == 0 or "Connection refused" not in out.stderr:
+            break
+        print(f"    → news 가 아직 연결을 안 받음(Connection refused), 10초 뒤 다시 ({attempt + 1}/6)")
+        time.sleep(10)
     sec = time.monotonic() - t0
     res = {}
     try:
