@@ -161,9 +161,13 @@ if not existing and _save:
         if st_k == 200 and any(k.get("token") == saved_tok for k in (ks or {}).get("data", [])):
             existing, how = a["id"], f"Secret {_save} 의 키를 가진 앱 '{a.get('name')}'"
             break
+# 이름을 바꾼 앱은 예전 이름으로도 찾는다(새 이름: 예전 이름들)
+OLD_NAMES = {"버핏 뉴스 요약": ["뉴스 시간별 요약"]}
 same = [a for a in all_apps if a.get("name") == APP_NAME]
+if not existing and not same:
+    same = [a for a in all_apps if a.get("name") in OLD_NAMES.get(APP_NAME, [])]
 if not existing and same:
-    existing, how = same[0]["id"], f"같은 이름 '{APP_NAME}'"
+    existing, how = same[0]["id"], f"이름 '{same[0].get('name')}'"
 dups = [a["id"] for a in same if a["id"] != existing]
 if dups:
     print(f"    → 같은 이름 앱이 {len(dups)}개 더 있습니다(지워도 됨): " + ", ".join(f"{BASE}/app/{d}/workflow" for d in dups))

@@ -7,11 +7,11 @@
 # 이 파일은 /tmp 생성 스크립트가 아니라 손으로 고쳐도 된다.
 # 올리기: SAVE_APP_KEY=news-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/news-hourly-summary-workflow.yml
 app:
-  description: 매시 정각 네이버 주요뉴스를 ego 로 읽고, news 로 중복 확인·저장한 뒤 앞 시간과 겹치지 않게 요약
+  description: 매시 정각 네이버 주요뉴스 중 관심종목의 해자·현금창출력을 바꾸는 기사만 버핏 관점으로 걸러 요약(DART 대조)
   icon: 🗞️
   icon_background: '#DBEAFE'
   mode: workflow
-  name: 뉴스 시간별 요약
+  name: 버핏 뉴스 요약
   use_icon_as_answer_icon: false
 kind: app
 version: 0.7.0
