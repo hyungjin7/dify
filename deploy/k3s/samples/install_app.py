@@ -168,9 +168,16 @@ if not existing and not same:
     same = [a for a in all_apps if a.get("name") in OLD_NAMES.get(APP_NAME, [])]
 if not existing and same:
     existing, how = same[0]["id"], f"이름 '{same[0].get('name')}'"
-dups = [a["id"] for a in same if a["id"] != existing]
-if dups:
-    print(f"    → 같은 이름 앱이 {len(dups)}개 더 있습니다(지워도 됨): " + ", ".join(f"{BASE}/app/{d}/workflow" for d in dups))
+# 같은 이름(또는 예전 이름) 중복 앱은 지운다(2026-11-19 사용자 지시 "중복 삭제"). 덮어쓸 앱 하나만 남긴다.
+# 지우지 않고 보기만: KEEP_DUPS=1
+names = {APP_NAME, *OLD_NAMES.get(APP_NAME, [])}
+dups = [a for a in all_apps if a.get("name") in names and a["id"] != existing] if existing else []
+for a in dups:
+    if os.getenv("KEEP_DUPS"):
+        print(f"    → 중복 앱(남겨 둠): '{a.get('name')}' {a['id']}")
+        continue
+    st_d, res_d = call("DELETE", f"/apps/{a['id']}")
+    print(f"    → 중복 앱 삭제 '{a.get('name')}' {a['id']}: " + ("완료" if st_d in (200, 204) else f"실패({st_d}) {res_d}"))
 if existing:
     print(f"    → 덮어쓸 앱: {how}")
 body = {"mode": "yaml-content", "yaml_content": dsl}
