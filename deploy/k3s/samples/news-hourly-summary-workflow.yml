@@ -705,7 +705,7 @@ workflow:
           - type: text
             value: '{"article_ids": "{{#merge.article_ids#}}", "slot": "{{#start.slot#}}"}'
           type: json
-        desc: 버핏 필터(news) — 관심종목 범위 → 시장 소음 → 구조적 변화(LLM) → DART 대조, 기사별 5항목 기록
+        desc: 버핏 필터(news) — 뉴스 채널 기사(한국·미국)도 붙여 시장 소음 → 시총 1조 범위 → 구조적 변화(LLM) → DART 대조, 기사별 5항목 기록
         headers: Content-Type:application/json
         method: post
         params: ''
@@ -751,17 +751,20 @@ workflow:
           import json
 
 
-          def main(body: str, status: int) -> dict:
-              # 필터가 실패해도 요약은 낸다(실패했다고 적는다)
+          def main(body: str, status: int, article_ids: str, sources: str) -> dict:
+              # 필터가 실패해도 요약은 낸다(실패했다고 적는다). news 가 뉴스 채널 기사를 더 붙이면(2026-11-21)
+              # 번호·출처는 news 가 돌려준 article_ids·sources 를 쓴다. 못 받으면 주요뉴스 것 그대로.
               try:
                   d = json.loads(body or "{}") or {}
               except ValueError:
                   d = {}
+              ids, src = d.get("article_ids") or article_ids, d.get("sources") or sources
               if not d.get("report"):
                   why = f"버핏 필터 실패(HTTP {status})" if status else "버핏 필터 응답 없음(시간 초과 등)"
                   return {"report": f"### 🧭 버핏 필터 신호\n{why} — 이번 시간은 신호를 판정하지 못함.",
-                          "signals": "(필터 실패)", "tally": why}
-              return {"report": d["report"], "signals": d.get("signals_text") or "(신호 없음)", "tally": d.get("tally") or ""}
+                          "signals": "(필터 실패)", "tally": why, "article_ids": article_ids, "sources": sources}
+              return {"report": d["report"], "signals": d.get("signals_text") or "(신호 없음)", "tally": d.get("tally") or "",
+                      "article_ids": ids, "sources": src}
         code_language: python3
         desc: 필터 결과에서 요약에 쓸 글을 꺼낸다
         outputs:
@@ -772,6 +775,12 @@ workflow:
             children: null
             type: string
           tally:
+            children: null
+            type: string
+          article_ids:
+            children: null
+            type: string
+          sources:
             children: null
             type: string
         selected: false
@@ -786,6 +795,14 @@ workflow:
           - buffett
           - status_code
           variable: status
+        - value_selector:
+          - merge
+          - article_ids
+          variable: article_ids
+        - value_selector:
+          - merge
+          - sources
+          variable: sources
       height: 90
       id: bparse
       position:
@@ -815,7 +832,7 @@ workflow:
           role: system
           text: |-
             너는 워런 버핏 관점의 투자 기록 담당이다. 아래 <신호> 는 {{#start.slot#}} 기준 새 뉴스 중 버핏 필터를 통과한 것이다.
-            필터: ① 관심종목의 산업·테마만 ② 주가·목표주가·금리·환율 단기 전망 같은 시장 소음 제거 ③ 일회성은 빼고 5~10년 해자·자본수익률을 바꾸는 구조적 변화만 ④ DART 공시·사업보고서와 대조.
+            필터: ① 목표주가·급등락·시황·금리·환율 단기 전망·수급·차트 같은 시장 소음을 제목 규칙으로 먼저 제거 ② 시가총액 1조 원 이상 종목(미국은 등록 종목)이 나오는 기사만 ③ 일회성은 빼고 5~10년 해자·자본수익률을 바꾸는 구조적 변화만 ④ DART 공시·사업보고서와 대조.
             규칙:
             - <신호> 에 있는 내용만 쓴다. 없는 사실·숫자를 지어내지 않는다. 문장 끝에 근거 [기사N] 을 그대로 붙인다.
             - 주가 방향·매수 매도 권유는 쓰지 않는다.
@@ -893,7 +910,7 @@ workflow:
           - text
           variable: text
         - value_selector:
-          - merge
+          - bparse
           - article_ids
           variable: article_ids
         - value_selector:
@@ -905,7 +922,7 @@ workflow:
           - report
           variable: report
         - value_selector:
-          - merge
+          - bparse
           - sources
           variable: sources
       height: 90
@@ -1028,7 +1045,7 @@ workflow:
           - telegram_chat_id
           variable: chat_id
         - value_selector:
-          - merge
+          - bparse
           - sources
           variable: sources
       height: 90
