@@ -146,9 +146,40 @@ for ds_name in sorted(set(re.findall(r"__DS:([^_\n<>]+)__", dsl))):   # 기술 �
     print(f"    → {ds_name} = {ds}")
 dsl = dsl.replace("name: gemma-4-E4B-it-MLX-8bit", f"name: {json.dumps(pick[1])}", 1)
 dsl = dsl.replace("provider: langgenius/openai_api_compatible/openai_api_compatible", f"provider: {json.dumps(pick[0])}", 1)
-st, apps = call("GET", "/apps?page=1&limit=100&name=" + urllib.request.quote(APP_NAME))
-existing = next((a["id"] for a in (apps or {}).get("data", []) if a.get("name") == APP_NAME), None) if st == 200 else None
-existing = os.getenv("APP_ID") or existing   # 화면 주소 /app/<id>/workflow 의 id 를 주면 그 앱을 덮어쓴다
+# 덮어쓸 앱 찾기(새 앱을 만들지 않게, 2026-11-19 사용자 지시 "만들지 말고 업데이트"):
+#   ① APP_ID  ② SAVE_APP_KEY Secret 에 저장된 키를 가진 앱(이름을 바꿔도 찾는다)  ③ 같은 이름 앱
+st, apps = call("GET", "/apps?page=1&limit=100")
+all_apps = (apps or {}).get("data", []) if st == 200 else []
+existing, how = os.getenv("APP_ID"), "APP_ID"
+_save = os.getenv("SAVE_APP_KEY", "").strip()
+if not existing and _save:
+    r_ = subprocess.run(["kubectl", "-n", "bbb-namespace", "get", "secret", _save, "-o", "jsonpath={.data.key}"],
+                        capture_output=True, text=True)
+    saved_tok = base64.b64decode(r_.stdout).decode() if r_.returncode == 0 and r_.stdout else ""
+    for a in all_apps if saved_tok else []:
+        st_k, ks = call("GET", f"/apps/{a['id']}/api-keys")
+        if st_k == 200 and any(k.get("token") == saved_tok for k in (ks or {}).get("data", [])):
+            existing, how = a["id"], f"Secret {_save} 의 키를 가진 앱 '{a.get('name')}'"
+            break
+# 이름을 바꾼 앱은 예전 이름으로도 찾는다(새 이름: 예전 이름들)
+OLD_NAMES = {"버핏 뉴스 요약": ["뉴스 시간별 요약"]}
+same = [a for a in all_apps if a.get("name") == APP_NAME]
+if not existing and not same:
+    same = [a for a in all_apps if a.get("name") in OLD_NAMES.get(APP_NAME, [])]
+if not existing and same:
+    existing, how = same[0]["id"], f"이름 '{same[0].get('name')}'"
+# 같은 이름(또는 예전 이름) 중복 앱: 기본은 목록만 보여 준다(되돌릴 수 없으니 목록을 보고 고른다).
+# 지우기: DELETE_DUPS=1 (덮어쓸 앱 하나만 남기고 나머지 삭제)
+names = {APP_NAME, *OLD_NAMES.get(APP_NAME, [])}
+dups = [a for a in all_apps if a.get("name") in names and a["id"] != existing] if existing else []
+for a in dups:
+    if os.getenv("DELETE_DUPS") != "1":
+        print(f"    → 중복 앱(지우려면 DELETE_DUPS=1): '{a.get('name')}' {a['id']} 수정 {a.get('updated_at') or '-'}  {BASE}/app/{a['id']}/workflow")
+        continue
+    st_d, res_d = call("DELETE", f"/apps/{a['id']}")
+    print(f"    → 중복 앱 삭제 '{a.get('name')}' {a['id']}: " + ("완료" if st_d in (200, 204) else f"실패({st_d}) {res_d}"))
+if existing:
+    print(f"    → 덮어쓸 앱: {how}")
 body = {"mode": "yaml-content", "yaml_content": dsl}
 if existing:
     body["app_id"] = existing
@@ -201,8 +232,15 @@ if save_as == "news-dify-app":
              "'http://news-service.bbb-namespace.svc.cluster.local:8005/api/v1/news/hourly-summary/run?force=true',"
              "method='POST',headers={'X-Service-Name':os.environ['SERVICE_AUTH_NAME'],"
              "'X-Service-Key':os.environ['SERVICE_AUTH_KEY']}),timeout=900);print(r.read().decode())")
-    out = subprocess.run(["kubectl", "-n", "bbb-namespace", "exec", "deploy/dworker", "--", "python", "-c", code_],
-                         capture_output=True, text=True)
+    # 다시 띄운 직후에는 끝나 가는 옛 Pod 로 연결이 가서 'Connection refused' 가 날 수 있다(2026-11-19 실측, 21.7초 실패).
+    # 그때만 10초씩 쉬며 6번까지 다시 부른다. 다른 실패는 그대로 보여 준다.
+    for attempt in range(6):
+        out = subprocess.run(["kubectl", "-n", "bbb-namespace", "exec", "deploy/dworker", "--", "python", "-c", code_],
+                             capture_output=True, text=True)
+        if out.returncode == 0 or "Connection refused" not in out.stderr:
+            break
+        print(f"    → news 가 아직 연결을 안 받음(Connection refused), 10초 뒤 다시 ({attempt + 1}/6)")
+        time.sleep(10)
     sec = time.monotonic() - t0
     res = {}
     try:

@@ -92,16 +92,29 @@ def run_delete(src):
 
 
 def sync_loop():
+    reset, idle_said = False, False
     while True:
         try:
+            if not reset:   # 예전 수집기가 받다 끊긴 '받는 중' 표시를 푼다(켜질 때 한 번, 실패해도 계속)
+                reset = True
+                try:
+                    n = agent("/reset").get("cleared", 0)
+                    if n:
+                        log(f"[정리] 끊겼던 '받는 중' {n}개를 풀었습니다 — 다시 받습니다")
+                except Exception as e:   # noqa: BLE001 — 예전 agent 에는 /reset 이 없다
+                    log(f"[정리 건너뜀] {e!r}")
             job = agent("/claim").get("job")
         except Exception as e:   # noqa: BLE001 — agent 가 잠깐 내려가도 수집기는 산다
             log(f"[대기] agent 연결 실패: {e!r}")
             time.sleep(POLL)
             continue
         if not job:
+            if not idle_said:
+                log("[대기] 지금 받을 출처 없음 — 다음 정기 갱신(KST 04:00)이나 '지금 갱신'을 기다립니다")
+                idle_said = True
             time.sleep(POLL)
             continue
+        idle_said = False
         src = job["source"]
         res = run_delete(src) if job["action"] == "delete" else run_sync(src)
         for i in range(5):

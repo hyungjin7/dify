@@ -1,16 +1,17 @@
 # 뉴스 시간별 요약 워크플로(2026-11-15 사용자 결정: Dify 중심, news 는 중복 제거·기사 저장).
 # 시작(slot) → ego 주요뉴스 목록+링크 → 기사 고르기 → news 중복 확인(앞 시간 요약 제외) → 새 기사만 ego 본문
-#   → news 저장 → 요약할 기사 묶기 → gemma 요약 → 결과 정리 → 끝(summary 한 칸: 글 + 끝의 숨김 표시 news-meta).
+#   → news 저장 → 요약할 기사 묶기 → 버핏 필터(news /dify/news/buffett, 2026-11-19) → gemma 한눈에 → 결과 정리
+#   → 끝(summary 한 칸: 글 + 끝의 숨김 표시 news-meta).
 # 매일 07~15시 정각에 bbb dworker → news /api/v1/news/hourly-summary/run 이 이 앱을 부르고 결과를 시간별로 저장한다.
 # 끝에 텔레그램 보내기(봇 토큰·채팅방 = Secret bbb-namespace/news-telegram, 준비: samples/telegram_setup.py). 실패해도 요약 저장은 그대로.
 # 이 파일은 /tmp 생성 스크립트가 아니라 손으로 고쳐도 된다.
 # 올리기: SAVE_APP_KEY=news-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/news-hourly-summary-workflow.yml
 app:
-  description: 매시 정각 네이버 주요뉴스를 ego 로 읽고, news 로 중복 확인·저장한 뒤 앞 시간과 겹치지 않게 요약
+  description: 매시 정각 네이버 주요뉴스 중 관심종목의 해자·현금창출력을 바꾸는 기사만 버핏 관점으로 걸러 요약(DART 대조)
   icon: 🗞️
   icon_background: '#DBEAFE'
   mode: workflow
-  name: 뉴스 시간별 요약
+  name: 버핏 뉴스 요약
   use_icon_as_answer_icon: false
 kind: app
 version: 0.7.0
@@ -122,9 +123,29 @@ workflow:
     - data:
         isInIteration: false
         sourceType: code
-        targetType: llm
-      id: merge-llm
+        targetType: http-request
+      id: merge-buffett
       source: merge
+      sourceHandle: source
+      target: buffett
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: code
+      id: buffett-bparse
+      source: buffett
+      sourceHandle: source
+      target: bparse
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: llm
+      id: bparse-llm
+      source: bparse
       sourceHandle: source
       target: llm
       targetHandle: target
@@ -189,7 +210,7 @@ workflow:
           required: false
           type: text-input
           variable: count
-          default: '20'
+          default: '100'
         - label: 시각(KST)
           max_length: 20
           options: []
@@ -216,9 +237,9 @@ workflow:
         body:
           data:
           - type: text
-            value: '{"url": "https://stock.naver.com/news/mainnews", "wait_until": "networkidle", "wait_ms": 2000, "include_links": true}'
+            value: '{"url": "https://stock.naver.com/news/mainnews", "wait_until": "networkidle", "wait_ms": 2000, "include_links": true, "scroll_times": 20, "scroll_wait_ms": 1200, "min_links": 260}'
           type: json
-        desc: 목록 화면 글자와 링크
+        desc: 목록 화면 글자와 링크(아래로 내려 더 불러옴, 최대 100건)
         headers: Content-Type:application/json
         method: post
         params: ''
@@ -230,7 +251,7 @@ workflow:
         ssl_verify: false
         timeout:
           max_connect_timeout: 10
-          max_read_timeout: 90
+          max_read_timeout: 180
           max_write_timeout: 30
         title: 주요뉴스 목록 열기(ego)
         type: http-request
@@ -271,9 +292,9 @@ workflow:
               except ValueError:
                   page = {}
               try:
-                  n = max(1, min(40, int(count or 20)))
+                  n = max(1, min(100, int(count or 100)))   # 상한 100건(2026-11-19 사용자 지시)
               except ValueError:
-                  n = 20
+                  n = 100
               if status_code != 200 or not page.get("text"):
                   return {"check_body": json.dumps({"items": []}), "note": f"목록 화면을 못 읽었습니다(상태 {status_code})"}
               cands = []
@@ -673,10 +694,115 @@ workflow:
       type: custom
       width: 244
     - data:
+        authorization:
+          config:
+            api_key: '{{#env.news_api_key#}}'
+            header: ''
+            type: bearer
+          type: api-key
+        body:
+          data:
+          - type: text
+            value: '{"article_ids": "{{#merge.article_ids#}}", "slot": "{{#start.slot#}}"}'
+          type: json
+        desc: 버핏 필터(news) — 관심종목 범위 → 시장 소음 → 구조적 변화(LLM) → DART 대조, 기사별 5항목 기록
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 0
+          retry_enabled: false
+          retry_interval: 2000
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 600
+          max_write_timeout: 30
+        title: 버핏 필터(news)
+        type: http-request
+        url: http://news-service.bbb-namespace.svc.cluster.local:8005/dify/news/buffett
+        variables: []
+        error_strategy: default-value
+        default_value:
+        - key: body
+          type: string
+          value: ''
+        - key: status_code
+          type: number
+          value: 0
+        - key: headers
+          type: object
+          value: {}
+      height: 90
+      id: buffett
+      position:
+        x: 2780
+        y: 120
+      positionAbsolute:
+        x: 2780
+        y: 120
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+
+
+          def main(body: str, status: int) -> dict:
+              # 필터가 실패해도 요약은 낸다(실패했다고 적는다)
+              try:
+                  d = json.loads(body or "{}") or {}
+              except ValueError:
+                  d = {}
+              if not d.get("report"):
+                  why = f"버핏 필터 실패(HTTP {status})" if status else "버핏 필터 응답 없음(시간 초과 등)"
+                  return {"report": f"### 🧭 버핏 필터 신호\n{why} — 이번 시간은 신호를 판정하지 못함.",
+                          "signals": "(필터 실패)", "tally": why}
+              return {"report": d["report"], "signals": d.get("signals_text") or "(신호 없음)", "tally": d.get("tally") or ""}
+        code_language: python3
+        desc: 필터 결과에서 요약에 쓸 글을 꺼낸다
+        outputs:
+          report:
+            children: null
+            type: string
+          signals:
+            children: null
+            type: string
+          tally:
+            children: null
+            type: string
+        selected: false
+        title: 필터 결과 정리
+        type: code
+        variables:
+        - value_selector:
+          - buffett
+          - body
+          variable: body
+        - value_selector:
+          - buffett
+          - status_code
+          variable: status
+      height: 90
+      id: bparse
+      position:
+        x: 3080
+        y: 120
+      positionAbsolute:
+        x: 3080
+        y: 120
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
         context:
           enabled: false
           variable_selector: []
-        desc: 시간별 요약
+        desc: 버핏 관점 한눈에(필터 통과 신호만)
         model:
           completion_params:
             max_tokens: 4000
@@ -688,48 +814,27 @@ workflow:
         - id: sys-prompt
           role: system
           text: |-
-            너는 증권 뉴스 편집자다. 아래 <기사> 는 네이버 증권 주요뉴스 중 {{#start.slot#}} 기준으로 **앞 시간 요약에 아직 안 나온** 기사들의 본문 앞부분이다.
+            너는 워런 버핏 관점의 투자 기록 담당이다. 아래 <신호> 는 {{#start.slot#}} 기준 새 뉴스 중 버핏 필터를 통과한 것이다.
+            필터: ① 관심종목의 산업·테마만 ② 주가·목표주가·금리·환율 단기 전망 같은 시장 소음 제거 ③ 일회성은 빼고 5~10년 해자·자본수익률을 바꾸는 구조적 변화만 ④ DART 공시·사업보고서와 대조.
             규칙:
-            - 기사 본문만 근거로 한국어로 쓴다. 없는 내용은 지어내지 않는다. 숫자(지수·환율·금리·주가·실적)는 본문 그대로 옮긴다.
-            - 문장 끝에 근거 [기사N] 을 붙인다. 같은 사건을 다룬 기사는 한 줄로 묶고 근거를 함께 단다.
-            - 문체는 공문서체(~함·~임·~됨 또는 ~다)로 쓰고 경어체(~습니다)는 쓰지 않는다.
-            - 아래 마크다운 틀을 그대로 따른다(제목 줄·빈 줄·글머리표 "- " 를 지킨다. 번호 목록 "1)" 은 쓰지 않는다).
+            - <신호> 에 있는 내용만 쓴다. 없는 사실·숫자를 지어내지 않는다. 문장 끝에 근거 [기사N] 을 그대로 붙인다.
+            - 주가 방향·매수 매도 권유는 쓰지 않는다.
+            - 문체는 공문서체(~함·~임·~됨)로 쓰고 경어체는 쓰지 않는다.
+            - 아래 틀만 출력한다(세부 항목·걸러낸 기사·출처는 뒤에 자동으로 붙으니 쓰지 않는다).
 
-            ## {{#start.slot#}} 뉴스 요약
+            ## {{#start.slot#}} 버핏 관점 뉴스
 
             ### 📰 이번 시간 한눈에
-            - (핵심 3줄, 줄마다 [기사N])
+            - (해자를 강화·훼손하는 신호를 중요한 순서로 최대 3줄, 줄마다 [기사N])
+            - (신호가 없으면 "해자를 바꾸는 구조적 신호 없음." 한 줄)
 
-            ### 📊 주제별 요약
-            #### 거시·환율·금리
-            - (기사마다 1~2줄: 핵심 사실·숫자·원인·전망 [기사N])
-            #### 국내 증시
-            - …
-            #### 해외 증시
-            - …
-            #### 산업·업종
-            - …
-            #### 종목
-            - …
-            (기사 없는 묶음은 제목째 뺀다)
-
-            ### 🏷️ 언급 종목·업종
-            | 이름 | 기사 | 핵심 |
-            |---|---|---|
-            | (2개 이상 기사에 나오거나 중요한 것만, 없으면 이 칸 전체를 뺀다) | [기사N] | 한 줄 |
-
-            ### 🔗 출처
-            - [기사N] [제목](주소)
-            (한 줄에 기사 하나, 주소는 제목 링크로만 쓰고 따로 적지 않는다)
-
-            - <기사> 가 비었으면 "## {{#start.slot#}} 뉴스 요약" 다음 줄에 "이번 시간에는 새 주요뉴스가 없습니다." 한 줄과 아래 참고만 쓴다.
             - 사용자 요청이 있으면 그 주제 위주로 쓴다: {{#start.request#}}
 
-            참고: {{#merge.note#}}
+            필터 집계: {{#bparse.tally#}}
 
-            <기사>
-            {{#merge.text#}}
-            </기사>
+            <신호>
+            {{#bparse.signals#}}
+            </신호>
         - id: user-prompt
           role: user
           text: '{{#start.slot#}} 주요뉴스 요약'
@@ -753,16 +858,28 @@ workflow:
       width: 244
     - data:
         code: |
+          import json
           import re
 
 
-          def main(text: str, article_ids: str, new_count: str) -> dict:
+          def main(text: str, article_ids: str, new_count: str, report: str, sources: str) -> dict:
               # 생각(think) 블록이 섞여 나오면 뺀다. 숨김 표시는 화면에 안 보이고 news 가 읽어 기사 연결에 쓴다.
+              # 순서: LLM 한눈에 → 버핏 필터 신호(5항목·DART 대조, news 가 만든 글) → 걸러낸 기사 → 출처
               body = re.sub(r"<think>.*?</think>", "", text or "", flags=re.S).strip()
+              try:
+                  src = json.loads(sources or "[]")
+              except ValueError:
+                  src = []
+              links = [f"- [기사{n}] [{(a.get('title') or '기사')[:80]}]({a.get('url')})" if (a.get("url") or "").startswith("http")
+                       else f"- [기사{n}] {(a.get('title') or '')[:80]}" for n, a in enumerate(src, 1)]
+              parts = [body, (report or "").strip()]
+              if links:
+                  parts.append("### 🔗 출처\n" + "\n".join(links))
               ids = ",".join(x for x in (article_ids or "").replace(" ", "").split(",") if x.isdigit())
-              return {"result": f"{body}\n\n<!-- news-meta article_ids={ids} new_count={(new_count or '0').strip()} -->"}
+              out = "\n\n".join(p for p in parts if p)
+              return {"result": f"{out}\n\n<!-- news-meta article_ids={ids} new_count={(new_count or '0').strip()} -->"}
         code_language: python3
-        desc: 요약 글 하나로 내보내고, 쓴 기사 번호는 글 끝 숨김 표시로 news 에 넘긴다
+        desc: 한눈에 + 버핏 필터 신호·걸러낸 기사 + 출처를 글 하나로, 쓴 기사 번호는 글 끝 숨김 표시로 news 에 넘긴다
         outputs:
           result:
             children: null
@@ -783,6 +900,14 @@ workflow:
           - merge
           - new_count
           variable: new_count
+        - value_selector:
+          - bparse
+          - report
+          variable: report
+        - value_selector:
+          - merge
+          - sources
+          variable: sources
       height: 90
       id: finish
       position:
