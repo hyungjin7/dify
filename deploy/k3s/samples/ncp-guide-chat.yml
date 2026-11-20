@@ -93,7 +93,7 @@ workflow:
         multiple_retrieval_config:
           reranking_enable: false
           reranking_mode: reranking_model
-          top_k: 8
+          top_k: 10
         query_variable_selector:
         - sys
         - query
@@ -119,7 +119,7 @@ workflow:
           variable_selector:
           - kr
           - result
-        desc: 찾은 가이드만 근거로 답한다
+        desc: 가이드 근거와 일반 설명을 나눠 답한다
         memory:
           query_prompt_template: '{{#sys.query#}}'
           role_prefix:
@@ -141,7 +141,10 @@ workflow:
           text: |-
             너는 NAVER Cloud Platform(NCP) 사용자 가이드 안내원이다. 아래 <가이드> 는 사용자 가이드에서 질문으로 찾은 문단들이다.
             규칙:
-            - <가이드> 에 있는 내용만 근거로 한국어로 답한다. 없으면 "가이드에서 찾지 못했습니다"라고 말하고 짐작하지 않는다.
+            - 답은 두 칸으로 나눈다(2026-11-21 사용자 결정).
+              "## 가이드 근거": <가이드> 에 있는 내용만 쓴다. 해당 내용이 없으면 "가이드에서 찾지 못했습니다" 한 줄만 쓴다.
+              "## 일반 설명(가이드 밖)": 개념·이유("왜 필요한가") 질문이거나 가이드 근거가 모자랄 때만 일반 지식으로 짧게(5줄 이내) 보탠다. NCP 의 설정값·제한·요금·메뉴 경로는 이 칸에 쓰지 않는다. 필요 없으면 이 칸을 뺀다.
+            - 두 칸의 내용을 섞지 않는다. 가이드 근거 칸에 짐작을 넣지 않는다.
             - 콘솔 조작은 메뉴 경로(예: Console > Services > Networking > VPC)와 순서 번호 단계로 쓴다.
             - 설정값·제한·요금 숫자는 가이드에 적힌 그대로 옮긴다.
             - 문단 제목에 [공공 가이드] 가 붙은 것은 공공기관용(gov) 가이드다. 일반과 공공 내용이 다르면 나눠서 말하고, 질문이 공공을 말하지 않으면 일반 가이드를 먼저 쓴다.
