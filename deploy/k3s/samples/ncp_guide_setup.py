@@ -7,7 +7,7 @@
 하는 일(다시 돌려도 안전):
   1) Dify 콘솔 로그인 → 지식 API 키 만들기(Secret dify/ncp-guide-sync 가 이미 있으면 그 키를 그대로 씀)
   2) 지식 베이스 "NCP 사용자 가이드" 찾기·없으면 만들기(고품질 색인, 임베딩 모델 bge-m3 를 직접 지정 — EMBEDDING_MODEL 로 바꿈)
-  2b) 찾는 방식: 하이브리드(뜻 + 낱말) + 리랭커 bge-reranker-v2-m3, 조각 8개(RERANK_MODEL·TOP_K 로 바꿈, 2026-11-19)
+  2b) 찾는 방식: 하이브리드(뜻 + 낱말) + 리랭커 bge-reranker-v2-m3, 조각 10개(RERANK_MODEL·TOP_K 로 바꿈, 2026-11-19 · 10개는 11-21)
       — "서브넷이 왜 필요해?"처럼 문서 말투와 다른 질문도 VPC·Subnet 개요 문서를 찾게 한다. 이미 있는 지식 베이스에도 다시 적용된다.
   3) Secret dify/ncp-guide-sync {key, dataset_id} 저장 → CronJob ncp-guide-sync 가 이 값으로 갱신한다
 그다음(출력에 명령이 나온다):
@@ -143,7 +143,7 @@ else:
     print(f"[2] 지식 베이스 만듦: {NAME} ({ds_id})")
 
 # 2b) 찾는 방식(다시 돌려도 같은 값)
-TOP_K = int(os.getenv("TOP_K", "8"))
+TOP_K = int(os.getenv("TOP_K", "10"))
 rr = rerank_model()
 if rr:
     retrieval = {"search_method": "hybrid_search", "reranking_enable": True, "reranking_mode": "reranking_model",
