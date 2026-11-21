@@ -1,6 +1,6 @@
 # 뉴스 시간별 요약 워크플로(2026-11-15 사용자 결정: Dify 중심, news 는 중복 제거·기사 저장).
 # 시작(slot) → ego 주요뉴스 목록+링크 → 기사 고르기 → news 중복 확인(앞 시간 요약 제외) → 새 기사만 ego 본문
-#   → news 저장 → 요약할 기사 묶기 → 버핏 필터(news /dify/news/buffett, 2026-11-19) → gemma 한눈에 → 결과 정리
+#   → news 저장 → 요약할 기사 묶기 → 신문사 기사 모으기(news /dify/news/channels, 2026-11-21) → 버핏 필터(news /dify/news/buffett, 2026-11-19) → gemma 한눈에 → 결과 정리
 #   → 끝(summary 한 칸: 글 + 끝의 숨김 표시 news-meta).
 # 매일 07~15시 정각에 bbb dworker → news /api/v1/news/hourly-summary/run 이 이 앱을 부르고 결과를 시간별로 저장한다.
 # 끝에 텔레그램 보내기(봇 토큰·채팅방 = Secret bbb-namespace/news-telegram, 준비: samples/telegram_setup.py). 실패해도 요약 저장은 그대로.
@@ -124,8 +124,28 @@ workflow:
         isInIteration: false
         sourceType: code
         targetType: http-request
-      id: merge-buffett
+      id: merge-papers
       source: merge
+      sourceHandle: source
+      target: papers
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: code
+      id: papers-pparse
+      source: papers
+      sourceHandle: source
+      target: pparse
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: pparse-buffett
+      source: pparse
       sourceHandle: source
       target: buffett
       targetHandle: target
@@ -705,6 +725,107 @@ workflow:
           - type: text
             value: '{"article_ids": "{{#merge.article_ids#}}", "slot": "{{#start.slot#}}"}'
           type: json
+        desc: "신문사(News › 뉴스 채널: 매경·한경·연합·조선 등, 미국 포함)가 모은 기사 중 요약에 아직 안 쓴 것. 상시 판정이 해자 점수를 매긴 기사부터(2026-11-21)"
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 2000
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 60
+          max_write_timeout: 30
+        title: 신문사 기사 모으기(news)
+        type: http-request
+        url: http://news-service.bbb-namespace.svc.cluster.local:8005/dify/news/channels
+        variables: []
+        error_strategy: default-value
+        default_value:
+        - key: body
+          type: string
+          value: ''
+        - key: status_code
+          type: number
+          value: 0
+        - key: headers
+          type: object
+          value: {}
+      height: 90
+      id: papers
+      position:
+        x: 2480
+        y: 440
+      positionAbsolute:
+        x: 2480
+        y: 440
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+
+
+          def main(body: str, status: int) -> dict:
+              # 못 받으면 "auto" → 버핏 필터(news)가 스스로 신문사 기사를 고른다
+              try:
+                  d = json.loads(body or "{}") or {}
+              except ValueError:
+                  d = {}
+              if status != 200 or "channel_ids" not in d:
+                  return {"channel_ids": "auto", "summary": f"신문사 기사 모으기 실패(HTTP {status}) — 버핏 필터가 직접 고름"}
+              return {"channel_ids": d.get("channel_ids") or "",
+                      "summary": f"신문사 기사 {d.get('count', 0)}건: {d.get('by_press') or '없음'}"}
+        code_language: python3
+        desc: 신문사별 건수를 보이게 정리
+        outputs:
+          channel_ids:
+            children: null
+            type: string
+          summary:
+            children: null
+            type: string
+        selected: false
+        title: 신문사 기사 정리
+        type: code
+        variables:
+        - value_selector:
+          - papers
+          - body
+          variable: body
+        - value_selector:
+          - papers
+          - status_code
+          variable: status
+      height: 90
+      id: pparse
+      position:
+        x: 2630
+        y: 600
+      positionAbsolute:
+        x: 2630
+        y: 600
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config:
+            api_key: '{{#env.news_api_key#}}'
+            header: ''
+            type: bearer
+          type: api-key
+        body:
+          data:
+          - type: text
+            value: '{"article_ids": "{{#merge.article_ids#}}", "slot": "{{#start.slot#}}", "channel_ids": "{{#pparse.channel_ids#}}"}'
+          type: json
         desc: 버핏 필터(news) — 뉴스 채널 기사(한국·미국)도 붙여 시장 소음 → 시총 1조 범위 → 구조적 변화(LLM) → DART 대조, 기사별 5항목 기록
         headers: Content-Type:application/json
         method: post
@@ -848,6 +969,7 @@ workflow:
             - 사용자 요청이 있으면 그 주제 위주로 쓴다: {{#start.request#}}
 
             필터 집계: {{#bparse.tally#}}
+            {{#pparse.summary#}}
 
             <신호>
             {{#bparse.signals#}}
