@@ -1009,11 +1009,33 @@ workflow:
                   src = json.loads(sources or "[]")
               except ValueError:
                   src = []
-              # 출처는 본문(한눈에·신호)에 [기사N] 으로 나온 기사만 싣는다(2026-11-21 사용자 지시, 번호는 그대로). 전체는 i3 News Briefing
-              cited = {int(x) for x in re.findall(r"기사\s*(\d+)", f"{text or ''}\n{report or ''}")}
-              links = [f"- [기사{n}] [{(a.get('title') or '기사')[:80]}]({a.get('url')})" if (a.get("url") or "").startswith("http")
-                       else f"- [기사{n}] {(a.get('title') or '')[:80]}" for n, a in enumerate(src, 1) if n in cited]
-              parts = [body, (report or "").strip()]
+              # [기사N] 은 '신문사 n'(news 가 준 label) 링크로 바꾼다(2026-11-21 사용자 지시 "[기사1] → 한국경제 1").
+              # 출처는 본문(한눈에·신호)에 나온 기사만 싣는다(번호 순서는 그대로). 전체는 i3 News Briefing
+              cited = []
+
+              def cite(n):
+                  a = src[n - 1] if 0 < n <= len(src) else None
+                  if not a:
+                      return f"[기사{n}]"
+                  if n not in cited:
+                      cited.append(n)
+                  label = a.get("label") or f"기사{n}"
+                  url = a.get("url") or ""
+                  return f"[[{label}]]({url})" if url.startswith("http") else f"[{label}]"
+
+              def convert(t):
+                  t = re.sub(r"\[\[([^\[\]]*?기사\s*\d+[^\[\]]*?)\]\]", r"[\1]", t or "")   # [[기사3]] → [기사3]
+                  t = re.sub(r"\[([^\[\]]*?기사\s*\d+[^\[\]]*?)\](?!\()",
+                             lambda m: " ".join(cite(int(x)) for x in re.findall(r"기사\s*(\d+)", m.group(1))), t)
+                  return re.sub(r"(?<!\[)기사\s*(\d+)", lambda m: cite(int(m.group(1))), t)
+
+              body, rep = convert(body), convert(report or "")
+              links = []
+              for n in sorted(cited):
+                  a = src[n - 1]
+                  label, url, title = a.get("label") or f"기사{n}", a.get("url") or "", (a.get("title") or "기사")[:80]
+                  links.append(f"- **{label}** [{title}]({url})" if url.startswith("http") else f"- **{label}** {title}")
+              parts = [body, rep.strip()]
               if src:
                   parts.append("### 🔗 출처 (본문에 나온 기사 · 전체는 News Briefing)\n" + ("\n".join(links) or "- 본문에 인용한 기사 없음"))
               ids = ",".join(x for x in (article_ids or "").replace(" ", "").split(",") if x.isdigit())
@@ -1110,10 +1132,11 @@ workflow:
                       continue
                   title = html.escape(((DATED.match(a.get("title") or "") or [None, a.get("title") or ""])[1] or "")[:120])
                   url = (a.get("url") or "").strip()
+                  label = html.escape(a.get("label") or f"기사{n}")
                   if url.startswith("http"):
-                      out.append(f'• [기사{n}] <a href="{html.escape(url, quote=True)}">{title or "기사 보기"}</a>')
+                      out.append(f'• <b>{label}</b> <a href="{html.escape(url, quote=True)}">{title or "기사 보기"}</a>')
                   else:
-                      out.append(f"• [기사{n}] {title} (주소 없음)")
+                      out.append(f"• <b>{label}</b> {title} (주소 없음)")
                       missing.append(n)
               return out, missing
 
@@ -1125,7 +1148,10 @@ workflow:
               except ValueError:
                   src = []
               m0 = SOURCE_HEAD.search(body)
-              cited = {int(x) for x in re.findall(r"기사\s*(\d+)", body[:m0.start()] if m0 else body)}
+              head = body[:m0.start()] if m0 else body
+              # 본문 인용은 '신문사 n' 링크(결과 정리 노드가 바꿈) → 주소가 본문에 나온 기사만 출처에 싣는다. 예전 글은 [기사N]
+              cited = {n for n, a in enumerate(src, 1) if (a.get("url") or "").startswith("http") and a["url"] in head}
+              cited |= {int(x) for x in re.findall(r"기사\s*(\d+)", head)}
               tail, missing = source_lines(src, cited)
               if src:   # LLM 이 쓴 출처 칸(주소가 빠지기도 함)은 떼고 직접 만든 출처를 붙인다
                   m = SOURCE_HEAD.search(body)
