@@ -945,6 +945,7 @@ workflow:
           import re
 
           LIMIT = 3800   # 텔레그램 한 번에 4096자까지. 넘으면 줄 단위로 자르고 i3 안내를 붙인다
+          SOURCE_LIMIT = 1800   # 그중 출처 칸 몫(태그·주소 포함 글자 수)
 
 
           def inline(t):
@@ -1006,7 +1007,17 @@ workflow:
                   if m:
                       nxt = re.search(r"^#{1,3}\s", body[m.end():], re.M)
                       body = body[:m.start()] + (body[m.end() + nxt.start():] if nxt else "")
-                  tail = ["", "<b>🔗 출처</b> (해자 점수 60점 이상 · 전체는 News Briefing)"] + (tail or ["• 60점 이상 기사 없음"])
+                  # 출처가 많으면(채널 기사 100건 이상) 출처만으로 4096자를 넘어 텔레그램이 400 을 낸다(2026-11-21).
+                  # 출처는 글 한도의 절반까지만 싣고 나머지는 건수로 알린다.
+                  keep, used = [], 0
+                  for t in tail:
+                      if used + len(t) + 1 > SOURCE_LIMIT:
+                          break
+                      keep.append(t)
+                      used += len(t) + 1
+                  if len(keep) < len(tail):
+                      keep.append(f"• … 외 {len(tail) - len(keep)}건 · 전체는 i3 News Briefing")
+                  tail = ["", "<b>🔗 출처</b> (해자 점수 60점 이상 · 전체는 News Briefing)"] + (keep or ["• 60점 이상 기사 없음"])
               tail_size = sum(len(t) + 1 for t in tail)
               lines, size, cut = [], tail_size, False
               for raw in body.splitlines():
