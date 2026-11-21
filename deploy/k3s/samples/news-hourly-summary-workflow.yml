@@ -837,7 +837,7 @@ workflow:
             - <신호> 에 있는 내용만 쓴다. 없는 사실·숫자를 지어내지 않는다. 문장 끝에 근거 [기사N] 을 그대로 붙인다.
             - 주가 방향·매수 매도 권유는 쓰지 않는다.
             - 문체는 공문서체(~함·~임·~됨)로 쓰고 경어체는 쓰지 않는다.
-            - 아래 틀만 출력한다(세부 항목·걸러낸 기사·출처는 뒤에 자동으로 붙으니 쓰지 않는다).
+            - 아래 틀만 출력한다(세부 항목·출처는 뒤에 자동으로 붙으니 쓰지 않는다).
 
             ## {{#start.slot#}} 버핏 관점 뉴스
 
@@ -881,7 +881,7 @@ workflow:
 
           def main(text: str, article_ids: str, new_count: str, report: str, sources: str) -> dict:
               # 생각(think) 블록이 섞여 나오면 뺀다. 숨김 표시는 화면에 안 보이고 news 가 읽어 기사 연결에 쓴다.
-              # 순서: LLM 한눈에 → 버핏 필터 신호(5항목·DART 대조, news 가 만든 글) → 걸러낸 기사 → 출처
+              # 순서: LLM 한눈에 → 버핏 필터 신호(5항목·DART 대조, news 가 만든 글) → 출처 (걸러낸 기사는 싣지 않음, 2026-11-21)
               body = re.sub(r"<think>.*?</think>", "", text or "", flags=re.S).strip()
               try:
                   src = json.loads(sources or "[]")
@@ -896,7 +896,7 @@ workflow:
               out = "\n\n".join(p for p in parts if p)
               return {"result": f"{out}\n\n<!-- news-meta article_ids={ids} new_count={(new_count or '0').strip()} -->"}
         code_language: python3
-        desc: 한눈에 + 버핏 필터 신호·걸러낸 기사 + 출처를 글 하나로, 쓴 기사 번호는 글 끝 숨김 표시로 news 에 넘긴다
+        desc: 한눈에 + 버핏 필터 신호 + 출처를 글 하나로, 쓴 기사 번호는 글 끝 숨김 표시로 news 에 넘긴다
         outputs:
           result:
             children: null
