@@ -887,12 +887,13 @@ workflow:
                   src = json.loads(sources or "[]")
               except ValueError:
                   src = []
+              # 출처는 본문(한눈에·신호)에 [기사N] 으로 나온 기사만 싣는다(2026-11-21 사용자 지시, 번호는 그대로). 전체는 i3 News Briefing
+              cited = {int(x) for x in re.findall(r"기사\s*(\d+)", f"{text or ''}\n{report or ''}")}
               links = [f"- [기사{n}] [{(a.get('title') or '기사')[:80]}]({a.get('url')})" if (a.get("url") or "").startswith("http")
-                       else f"- [기사{n}] {(a.get('title') or '')[:80]}" for n, a in enumerate(src, 1) if a.get("show", True)]
+                       else f"- [기사{n}] {(a.get('title') or '')[:80]}" for n, a in enumerate(src, 1) if n in cited]
               parts = [body, (report or "").strip()]
-              # 출처는 해자 점수 60점 이상만(news 가 show 표시, 번호는 원래 [기사N] 그대로). 전체는 i3 News Briefing (2026-11-21 사용자 지시)
               if src:
-                  parts.append("### 🔗 출처 (해자 점수 60점 이상 · 전체는 News Briefing)\n" + ("\n".join(links) or "- 60점 이상 기사 없음"))
+                  parts.append("### 🔗 출처 (본문에 나온 기사 · 전체는 News Briefing)\n" + ("\n".join(links) or "- 본문에 인용한 기사 없음"))
               ids = ",".join(x for x in (article_ids or "").replace(" ", "").split(",") if x.isdigit())
               out = "\n\n".join(p for p in parts if p)
               return {"result": f"{out}\n\n<!-- news-meta article_ids={ids} new_count={(new_count or '0').strip()} -->"}
@@ -950,7 +951,7 @@ workflow:
 
           def inline(t):
               out, pos = [], 0
-              for m in re.finditer(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", t):
+              for m in re.finditer(r"\[(\[?[^\[\]]+\]?)\]\((https?://[^)\s]+)\)", t):   # [[기사6]](url) 처럼 글자에 [] 가 있는 링크도
                   out.append(html.escape(t[pos:m.start()]))
                   out.append(f'<a href="{html.escape(m.group(2), quote=True)}">{html.escape(m.group(1))}</a>')
                   pos = m.end()
@@ -979,11 +980,11 @@ workflow:
           SOURCE_HEAD = re.compile(r"^#{2,4}[^\n]*출처[^\n]*$", re.M)
 
 
-          def source_lines(sources):
+          def source_lines(sources, cited=None):
               # 출처는 기사 순서(= 본문 [기사N] 번호)대로 직접 만든다. 주소 없는 기사는 이유를 남긴다.
               out, missing = [], []
               for n, a in enumerate(sources, 1):
-                  if not a.get("show", True):   # 해자 점수 60점 미만은 출처에서 뺀다(번호는 그대로)
+                  if cited is not None and n not in cited:   # 본문에 나온 기사만(번호는 그대로)
                       continue
                   title = html.escape(((DATED.match(a.get("title") or "") or [None, a.get("title") or ""])[1] or "")[:120])
                   url = (a.get("url") or "").strip()
@@ -1001,7 +1002,9 @@ workflow:
                   src = json.loads(sources or "[]")
               except ValueError:
                   src = []
-              tail, missing = source_lines(src)
+              m0 = SOURCE_HEAD.search(body)
+              cited = {int(x) for x in re.findall(r"기사\s*(\d+)", body[:m0.start()] if m0 else body)}
+              tail, missing = source_lines(src, cited)
               if src:   # LLM 이 쓴 출처 칸(주소가 빠지기도 함)은 떼고 직접 만든 출처를 붙인다
                   m = SOURCE_HEAD.search(body)
                   if m:
@@ -1017,7 +1020,7 @@ workflow:
                       used += len(t) + 1
                   if len(keep) < len(tail):
                       keep.append(f"• … 외 {len(tail) - len(keep)}건 · 전체는 i3 News Briefing")
-                  tail = ["", "<b>🔗 출처</b> (해자 점수 60점 이상 · 전체는 News Briefing)"] + (keep or ["• 60점 이상 기사 없음"])
+                  tail = ["", "<b>🔗 출처</b> (본문에 나온 기사 · 전체는 News Briefing)"] + (keep or ["• 본문에 인용한 기사 없음"])
               tail_size = sum(len(t) + 1 for t in tail)
               lines, size, cut = [], tail_size, False
               for raw in body.splitlines():
@@ -1034,7 +1037,7 @@ workflow:
                   text += "\n\n… 전체는 i3 News › 뉴스 요약(시간별)"
               if tail:
                   text += "\n" + "\n".join(tail)
-              note = f"출처 {len(src)}건 중 {sum(1 for a in src if a.get('show', True))}건 표시" + (f", 주소 없음: 기사 {', '.join(map(str, missing))}(news 저장 자료에 url 없음)" if missing else "")
+              note = f"출처 {len(src)}건 중 {len(tail) - 2 if tail else 0}건 표시" + (f", 주소 없음: 기사 {', '.join(map(str, missing))}(news 저장 자료에 url 없음)" if missing else "")
               return {"note": note, "body": json.dumps({"chat_id": (chat_id or "").strip(), "text": text or "(요약 없음)", "parse_mode": "HTML",
                                           "disable_web_page_preview": True}, ensure_ascii=False)}
         code_language: python3
