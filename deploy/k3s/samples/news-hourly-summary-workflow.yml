@@ -888,10 +888,11 @@ workflow:
               except ValueError:
                   src = []
               links = [f"- [기사{n}] [{(a.get('title') or '기사')[:80]}]({a.get('url')})" if (a.get("url") or "").startswith("http")
-                       else f"- [기사{n}] {(a.get('title') or '')[:80]}" for n, a in enumerate(src, 1)]
+                       else f"- [기사{n}] {(a.get('title') or '')[:80]}" for n, a in enumerate(src, 1) if a.get("show", True)]
               parts = [body, (report or "").strip()]
-              if links:
-                  parts.append("### 🔗 출처\n" + "\n".join(links))
+              # 출처는 해자 점수 60점 이상만(news 가 show 표시, 번호는 원래 [기사N] 그대로). 전체는 i3 News Briefing (2026-11-21 사용자 지시)
+              if src:
+                  parts.append("### 🔗 출처 (해자 점수 60점 이상 · 전체는 News Briefing)\n" + ("\n".join(links) or "- 60점 이상 기사 없음"))
               ids = ",".join(x for x in (article_ids or "").replace(" ", "").split(",") if x.isdigit())
               out = "\n\n".join(p for p in parts if p)
               return {"result": f"{out}\n\n<!-- news-meta article_ids={ids} new_count={(new_count or '0').strip()} -->"}
@@ -981,6 +982,8 @@ workflow:
               # 출처는 기사 순서(= 본문 [기사N] 번호)대로 직접 만든다. 주소 없는 기사는 이유를 남긴다.
               out, missing = [], []
               for n, a in enumerate(sources, 1):
+                  if not a.get("show", True):   # 해자 점수 60점 미만은 출처에서 뺀다(번호는 그대로)
+                      continue
                   title = html.escape(((DATED.match(a.get("title") or "") or [None, a.get("title") or ""])[1] or "")[:120])
                   url = (a.get("url") or "").strip()
                   if url.startswith("http"):
@@ -998,12 +1001,12 @@ workflow:
               except ValueError:
                   src = []
               tail, missing = source_lines(src)
-              if tail:   # LLM 이 쓴 출처 칸(주소가 빠지기도 함)은 떼고 직접 만든 출처를 붙인다
+              if src:   # LLM 이 쓴 출처 칸(주소가 빠지기도 함)은 떼고 직접 만든 출처를 붙인다
                   m = SOURCE_HEAD.search(body)
                   if m:
                       nxt = re.search(r"^#{1,3}\s", body[m.end():], re.M)
                       body = body[:m.start()] + (body[m.end() + nxt.start():] if nxt else "")
-                  tail = ["", "<b>🔗 출처</b>"] + tail
+                  tail = ["", "<b>🔗 출처</b> (해자 점수 60점 이상 · 전체는 News Briefing)"] + (tail or ["• 60점 이상 기사 없음"])
               tail_size = sum(len(t) + 1 for t in tail)
               lines, size, cut = [], tail_size, False
               for raw in body.splitlines():
@@ -1020,7 +1023,7 @@ workflow:
                   text += "\n\n… 전체는 i3 News › 뉴스 요약(시간별)"
               if tail:
                   text += "\n" + "\n".join(tail)
-              note = f"출처 {len(src)}건" + (f", 주소 없음: 기사 {', '.join(map(str, missing))}(news 저장 자료에 url 없음)" if missing else "")
+              note = f"출처 {len(src)}건 중 {sum(1 for a in src if a.get('show', True))}건 표시" + (f", 주소 없음: 기사 {', '.join(map(str, missing))}(news 저장 자료에 url 없음)" if missing else "")
               return {"note": note, "body": json.dumps({"chat_id": (chat_id or "").strip(), "text": text or "(요약 없음)", "parse_mode": "HTML",
                                           "disable_web_page_preview": True}, ensure_ascii=False)}
         code_language: python3
