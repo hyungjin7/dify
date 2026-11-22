@@ -1,17 +1,18 @@
-# 뉴스 시간별 요약 워크플로(2026-11-15 사용자 결정: Dify 중심, news 는 중복 제거·기사 저장).
-# 시작(slot) → ego 주요뉴스 목록+링크 → 기사 고르기 → news 중복 확인(앞 시간 요약 제외) → 새 기사만 ego 본문
-#   → news 저장 → 요약할 기사 묶기 → 신문사 기사 모으기(news /dify/news/channels, 2026-11-21) → 버핏 필터(news /dify/news/buffett, 2026-11-19) → gemma 한눈에 → 결과 정리
-#   → 끝(summary 한 칸: 글 + 끝의 숨김 표시 news-meta).
-# 매일 07~15시 정각에 bbb dworker → news /api/v1/news/hourly-summary/run 이 이 앱을 부르고 결과를 시간별로 저장한다.
+# 버핏 뉴스 ③ 요약(2026-11-22 사용자 결정: 수집·판정·요약 2단계 분리, 요약은 08·12·15시 3번).
+# 시작(slot) → 요약할 기사 모으기(news /dify/news/channels: 최근 24시간 중 요약에 안 쓴 기사) → 버핏 판정 결과 모으기
+#   (news /dify/news/buffett judge=false: ② 상시 판정이 끝낸 결과만, LLM 안 부름) → gemma 한눈에 → 결과 정리 → 텔레그램 → 끝.
+# 수집(ego 목록·본문·저장)은 news-collect-workflow.yml(① 매시 정각)로 옮겼다. 판정은 news 가 저장 즉시 + 10분마다 한다(②).
+# 아직 판정 안 된 기사는 이번 요약에서 빠지고(집계 줄 '판정 대기 N') 다음 요약에 실린다.
+# 08·12·15시에 bbb dworker → news /api/v1/news/hourly-summary/run 이 이 앱을 부르고 결과를 news_hourly_summaries 에 저장한다.
 # 끝에 텔레그램 보내기(봇 토큰·채팅방 = Secret bbb-namespace/news-telegram, 준비: samples/telegram_setup.py). 실패해도 요약 저장은 그대로.
-# 이 파일은 /tmp 생성 스크립트가 아니라 손으로 고쳐도 된다.
+# 예전 이름 '버핏 뉴스 요약'·'뉴스 시간별 요약' 앱을 그대로 덮어쓴다(새 앱 만들지 않음).
 # 올리기: SAVE_APP_KEY=news-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/news-hourly-summary-workflow.yml
 app:
-  description: 매시 정각 네이버 주요뉴스 중 관심종목의 해자·현금창출력을 바꾸는 기사만 버핏 관점으로 걸러 요약(DART 대조)
+  description: '08·12·15시: 상시 판정(②)이 끝낸 버핏 판정 결과만 모아 해자를 바꾸는 신호를 버핏 관점으로 요약(DART 대조). 수집은 앱 "버핏 뉴스 ① 수집"(매시)'
   icon: 🗞️
   icon_background: '#DBEAFE'
   mode: workflow
-  name: 버핏 뉴스 요약
+  name: 버핏 뉴스 ③ 요약
   use_icon_as_answer_icon: false
 kind: app
 version: 0.7.0
@@ -44,88 +45,8 @@ workflow:
         isInIteration: false
         sourceType: start
         targetType: http-request
-      id: start-fetch
+      id: start-papers
       source: start
-      sourceHandle: source
-      target: fetch
-      targetHandle: target
-      type: custom
-    - data:
-        isInIteration: false
-        sourceType: http-request
-        targetType: code
-      id: fetch-pick
-      source: fetch
-      sourceHandle: source
-      target: pick
-      targetHandle: target
-      type: custom
-    - data:
-        isInIteration: false
-        sourceType: code
-        targetType: http-request
-      id: pick-check
-      source: pick
-      sourceHandle: source
-      target: check
-      targetHandle: target
-      type: custom
-    - data:
-        isInIteration: false
-        sourceType: http-request
-        targetType: code
-      id: check-plan
-      source: check
-      sourceHandle: source
-      target: plan
-      targetHandle: target
-      type: custom
-    - data:
-        isInIteration: false
-        sourceType: code
-        targetType: http-request
-      id: plan-articles
-      source: plan
-      sourceHandle: source
-      target: articles
-      targetHandle: target
-      type: custom
-    - data:
-        isInIteration: false
-        sourceType: http-request
-        targetType: code
-      id: articles-prep
-      source: articles
-      sourceHandle: source
-      target: prep
-      targetHandle: target
-      type: custom
-    - data:
-        isInIteration: false
-        sourceType: code
-        targetType: http-request
-      id: prep-save
-      source: prep
-      sourceHandle: source
-      target: save
-      targetHandle: target
-      type: custom
-    - data:
-        isInIteration: false
-        sourceType: http-request
-        targetType: code
-      id: save-merge
-      source: save
-      sourceHandle: source
-      target: merge
-      targetHandle: target
-      type: custom
-    - data:
-        isInIteration: false
-        sourceType: code
-        targetType: http-request
-      id: merge-papers
-      source: merge
       sourceHandle: source
       target: papers
       targetHandle: target
@@ -212,7 +133,7 @@ workflow:
       type: custom
     nodes:
     - data:
-        desc: 'dworker 가 매시 정각에 slot(예: 2026-11-16 09:00)을 넣어 부른다'
+        desc: 'dworker 가 08·12·15시에 slot(예: 2026-11-22 08:00)을 넣어 부른다(버핏 뉴스 ③ 요약)'
         selected: false
         title: 시작
         type: start
@@ -252,129 +173,6 @@ workflow:
       width: 244
     - data:
         authorization:
-          config: null
-          type: no-auth
-        body:
-          data:
-          - type: text
-            value: '{"url": "https://stock.naver.com/news/mainnews", "wait_until": "networkidle", "wait_ms": 2000, "include_links": true, "scroll_times": 20, "scroll_wait_ms": 1200, "min_links": 260}'
-          type: json
-        desc: 목록 화면 글자와 링크(아래로 내려 더 불러옴, 최대 100건)
-        headers: Content-Type:application/json
-        method: post
-        params: ''
-        retry_config:
-          max_retries: 1
-          retry_enabled: true
-          retry_interval: 2000
-        selected: false
-        ssl_verify: false
-        timeout:
-          max_connect_timeout: 10
-          max_read_timeout: 180
-          max_write_timeout: 30
-        title: 주요뉴스 목록 열기(ego)
-        type: http-request
-        url: http://ego.bbb-namespace.svc.cluster.local:8017/api/v1/ego/page
-        variables: []
-      height: 90
-      id: fetch
-      position:
-        x: 380
-        y: 280
-      positionAbsolute:
-        x: 380
-        y: 280
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 244
-    - data:
-        code: |
-          import json
-          import re
-
-          # 기사 주소 모양: 네이버 뉴스(n.news.naver.com/.../article/…) 등
-          ARTICLE = re.compile(r"/article/|news_read|/news/[A-Za-z_]+/\d+|/news/\d+|[?&](article_?id|aid|nid)=")
-          LISTING = re.compile(r"/news/(mainnews|flashnews|ranking|search|list|category)\b|/news/?$|[?&]page=")
-          DATED = re.compile(r"^(.*?\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.\s*\d{1,2}:\d{2})")
-
-
-          def short_title(text):
-              # 목록 링크 글자 = 제목·코너·날짜·본문 앞부분·매체. 날짜·시간까지만 제목으로 쓴다.
-              m = DATED.match(text)
-              return (m.group(1) if m else text)[:200]
-
-
-          def main(body: str, status_code: int, count: str) -> dict:
-              try:
-                  page = json.loads(body or "{}")
-              except ValueError:
-                  page = {}
-              try:
-                  n = max(1, min(100, int(count or 100)))   # 상한 100건(2026-11-19 사용자 지시)
-              except ValueError:
-                  n = 100
-              if status_code != 200 or not page.get("text"):
-                  return {"check_body": json.dumps({"items": []}), "note": f"목록 화면을 못 읽었습니다(상태 {status_code})"}
-              cands = []
-              for l in page.get("links") or []:
-                  href = str(l.get("href") or "").split("#")[0]
-                  text = " ".join(str(l.get("text") or "").split())
-                  if len(text) < 12 or LISTING.search(href):
-                      continue
-                  rank = 0 if ARTICLE.search(href) else (1 if "news" in href.lower() else 9)
-                  if rank < 9:
-                      cands.append((rank, href, text))
-              items, seen = [], set()
-              for rank, href, text in sorted(cands, key=lambda c: c[0]):
-                  if href in seen:
-                      continue
-                  seen.add(href)
-                  items.append({"url": href, "title": short_title(text)})
-                  if len(items) >= n:
-                      break
-              note = f"목록 링크 {len(page.get('links') or [])}개 중 기사 {len(items)}개"
-              return {"check_body": json.dumps({"items": items}, ensure_ascii=False), "note": note}
-        code_language: python3
-        desc: 링크에서 기사 주소 N개
-        outputs:
-          check_body:
-            children: null
-            type: string
-          note:
-            children: null
-            type: string
-        selected: false
-        title: 기사 고르기
-        type: code
-        variables:
-        - value_selector:
-          - fetch
-          - body
-          variable: body
-        - value_selector:
-          - fetch
-          - status_code
-          variable: status_code
-        - value_selector:
-          - start
-          - count
-          variable: count
-      height: 90
-      id: pick
-      position:
-        x: 680
-        y: 280
-      positionAbsolute:
-        x: 680
-        y: 280
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 244
-    - data:
-        authorization:
           config:
             api_key: '{{#env.news_api_key#}}'
             header: ''
@@ -383,9 +181,9 @@ workflow:
         body:
           data:
           - type: text
-            value: '{{#pick.check_body#}}'
+            value: '{"article_ids": "", "slot": "{{#start.slot#}}"}'
           type: json
-        desc: news 가 기존 기사·앞 시간 요약과 비교
+        desc: 최근 24시간 수집 기사(주요뉴스·신문사, 한국·미국) 중 요약에 아직 안 쓴 것. 상시 판정이 해자 점수를 매긴 기사부터(2026-11-22 2단계 분리)
         headers: Content-Type:application/json
         method: post
         params: ''
@@ -399,347 +197,7 @@ workflow:
           max_connect_timeout: 10
           max_read_timeout: 60
           max_write_timeout: 30
-        title: 중복 확인(news)
-        type: http-request
-        url: http://news-service.bbb-namespace.svc.cluster.local:8005/dify/news/check
-        variables: []
-      height: 90
-      id: check
-      position:
-        x: 980
-        y: 280
-      positionAbsolute:
-        x: 980
-        y: 280
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 244
-    - data:
-        code: |
-          import json
-
-
-          def main(body: str, status_code: int) -> dict:
-              # news 판정: new(처음) · duplicate(이미 저장) · similar(비슷한 기사) + summarized(앞 시간 요약에 이미 씀) + use(이번에 씀)
-              try:
-                  res = json.loads(body or "{}")
-              except ValueError:
-                  res = {}
-              items = res.get("items") or []
-              fetch = [i["url"] for i in items if i.get("use") and i.get("status") in ("new", "similar") and i.get("url")]
-              reuse = [i for i in items if i.get("use") and i.get("status") == "duplicate" and i.get("stored")]
-              skipped = sum(1 for i in items if not i.get("use"))
-              pages = {"urls": fetch or ["about:blank"], "wait_until": "domcontentloaded", "wait_ms": 800, "max_chars": 3000}
-              note = (f"새 기사 {len(fetch)}건, 저장돼 있던 기사 {len(reuse)}건, 앞 시간과 겹쳐 뺀 기사 {skipped}건"
-                      + ("" if status_code == 200 else f" (news 판정 실패 {status_code}: {str(body)[:200]})"))
-              titles = {i["url"]: i.get("title") or "" for i in items}
-              return {"pages_body": json.dumps(pages), "reuse": json.dumps(reuse, ensure_ascii=False),
-                      "titles": json.dumps(titles, ensure_ascii=False), "note": note}
-        code_language: python3
-        desc: 새 기사만 본문을 연다
-        outputs:
-          pages_body:
-            children: null
-            type: string
-          reuse:
-            children: null
-            type: string
-          titles:
-            children: null
-            type: string
-          note:
-            children: null
-            type: string
-        selected: false
-        title: 열 기사 정하기
-        type: code
-        variables:
-        - value_selector:
-          - check
-          - body
-          variable: body
-        - value_selector:
-          - check
-          - status_code
-          variable: status_code
-      height: 90
-      id: plan
-      position:
-        x: 1280
-        y: 280
-      positionAbsolute:
-        x: 1280
-        y: 280
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 244
-    - data:
-        authorization:
-          config: null
-          type: no-auth
-        body:
-          data:
-          - type: text
-            value: '{{#plan.pages_body#}}'
-          type: json
-        desc: 새 기사만 ego 로 연다
-        headers: Content-Type:application/json
-        method: post
-        params: ''
-        retry_config:
-          max_retries: 1
-          retry_enabled: true
-          retry_interval: 2000
-        selected: false
-        ssl_verify: false
-        timeout:
-          max_connect_timeout: 10
-          max_read_timeout: 600
-          max_write_timeout: 30
-        title: 기사 본문 열기(ego)
-        type: http-request
-        url: http://ego.bbb-namespace.svc.cluster.local:8017/api/v1/ego/pages
-        variables: []
-      height: 90
-      id: articles
-      position:
-        x: 1580
-        y: 280
-      positionAbsolute:
-        x: 1580
-        y: 280
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 244
-    - data:
-        code: |
-          import json
-
-
-          def main(body: str, titles: str) -> dict:
-              # ego 로 받은 본문 → news 에 저장할 목록
-              try:
-                  res = json.loads(body or "{}")
-              except ValueError:
-                  res = {}
-              try:
-                  tmap = json.loads(titles or "{}")
-              except ValueError:
-                  tmap = {}
-              items, bad = [], 0
-              for it in res.get("items") or []:
-                  url = it.get("url") or ""
-                  if url == "about:blank":
-                      continue
-                  text = (it.get("text") or "").strip()
-                  if it.get("error") or len(text) < 200:
-                      bad += 1
-                      continue
-                  items.append({"url": url, "title": tmap.get(url) or it.get("title") or "", "content": text})
-              return {"save_body": json.dumps({"source": "Naver 주요뉴스", "items": items}, ensure_ascii=False),
-                      "fetched": json.dumps(items, ensure_ascii=False), "bad": str(bad)}
-        code_language: python3
-        desc: 본문 있는 기사만
-        outputs:
-          save_body:
-            children: null
-            type: string
-          fetched:
-            children: null
-            type: string
-          bad:
-            children: null
-            type: string
-        selected: false
-        title: 저장할 기사 정리
-        type: code
-        variables:
-        - value_selector:
-          - articles
-          - body
-          variable: body
-        - value_selector:
-          - plan
-          - titles
-          variable: titles
-      height: 90
-      id: prep
-      position:
-        x: 1880
-        y: 280
-      positionAbsolute:
-        x: 1880
-        y: 280
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 244
-    - data:
-        authorization:
-          config:
-            api_key: '{{#env.news_api_key#}}'
-            header: ''
-            type: bearer
-          type: api-key
-        body:
-          data:
-          - type: text
-            value: '{{#prep.save_body#}}'
-          type: json
-        desc: news_articles 에 저장(중복은 news 가 다시 거름)
-        headers: Content-Type:application/json
-        method: post
-        params: ''
-        retry_config:
-          max_retries: 1
-          retry_enabled: true
-          retry_interval: 2000
-        selected: false
-        ssl_verify: false
-        timeout:
-          max_connect_timeout: 10
-          max_read_timeout: 120
-          max_write_timeout: 30
-        title: 기사 저장(news)
-        type: http-request
-        url: http://news-service.bbb-namespace.svc.cluster.local:8005/dify/news/save
-        variables: []
-      height: 90
-      id: save
-      position:
-        x: 2180
-        y: 280
-      positionAbsolute:
-        x: 2180
-        y: 280
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 244
-    - data:
-        code: |
-          import json
-
-
-          def main(save_body: str, save_status: int, fetched: str, reuse: str, note: str, bad: str) -> dict:
-              # 요약에 쓸 기사 = 이번에 새로 저장한 기사 + 저장돼 있었지만 앞 시간 요약에 안 쓴 기사. id 는 시간별 요약에 남긴다
-              try:
-                  saved = (json.loads(save_body or "{}") or {}).get("saved") or []
-              except ValueError:
-                  saved = []
-              id_of = {s["url"]: s["id"] for s in saved if s.get("id")}
-              try:
-                  fetched_l = json.loads(fetched or "[]")
-              except ValueError:
-                  fetched_l = []
-              try:
-                  reuse_l = json.loads(reuse or "[]")
-              except ValueError:
-                  reuse_l = []
-              arts = []
-              for f in fetched_l:
-                  if f["url"] in id_of:
-                      arts.append({"id": id_of[f["url"]], "title": f["title"], "url": f["url"], "content": f["content"]})
-              for r in reuse_l:
-                  s = r.get("stored") or {}
-                  if s.get("id"):
-                      arts.append({"id": s["id"], "title": s.get("title") or r.get("title"), "url": s.get("url") or r.get("url"),
-                                   "content": s.get("content") or "", "press": s.get("press")})
-              parts = []
-              for n, a in enumerate(arts, 1):
-                  parts.append(f"[기사{n}] {a['title']}\n주소: {a['url']}\n{(a['content'] or '')[:2500]}")
-              msg = f"{note}. 본문 못 읽음 {bad}건. 요약 대상 {len(arts)}건" + ("" if save_status == 200 else f" (저장 실패 {save_status})")
-              return {"text": "\n\n".join(parts)[:40000], "article_ids": ",".join(str(a["id"]) for a in arts),
-                      "new_count": str(len(id_of)), "note": msg,
-                      "sources": json.dumps([{"title": a["title"] or "", "url": a["url"] or ""} for a in arts], ensure_ascii=False)}
-        code_language: python3
-        desc: 새로 저장한 기사 + 앞 시간에 안 쓴 저장 기사
-        outputs:
-          text:
-            children: null
-            type: string
-          article_ids:
-            children: null
-            type: string
-          new_count:
-            children: null
-            type: string
-          note:
-            children: null
-            type: string
-          sources:
-            children: null
-            type: string
-        selected: false
-        title: 요약할 기사 묶기
-        type: code
-        variables:
-        - value_selector:
-          - save
-          - body
-          variable: save_body
-        - value_selector:
-          - save
-          - status_code
-          variable: save_status
-        - value_selector:
-          - prep
-          - fetched
-          variable: fetched
-        - value_selector:
-          - plan
-          - reuse
-          variable: reuse
-        - value_selector:
-          - plan
-          - note
-          variable: note
-        - value_selector:
-          - prep
-          - bad
-          variable: bad
-      height: 90
-      id: merge
-      position:
-        x: 2480
-        y: 280
-      positionAbsolute:
-        x: 2480
-        y: 280
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 244
-    - data:
-        authorization:
-          config:
-            api_key: '{{#env.news_api_key#}}'
-            header: ''
-            type: bearer
-          type: api-key
-        body:
-          data:
-          - type: text
-            value: '{"article_ids": "{{#merge.article_ids#}}", "slot": "{{#start.slot#}}"}'
-          type: json
-        desc: "신문사(News › 뉴스 채널: 매경·한경·연합·조선 등, 미국 포함)가 모은 기사 중 요약에 아직 안 쓴 것. 상시 판정이 해자 점수를 매긴 기사부터(2026-11-21)"
-        headers: Content-Type:application/json
-        method: post
-        params: ''
-        retry_config:
-          max_retries: 1
-          retry_enabled: true
-          retry_interval: 2000
-        selected: false
-        ssl_verify: false
-        timeout:
-          max_connect_timeout: 10
-          max_read_timeout: 60
-          max_write_timeout: 30
-        title: 신문사 기사 모으기(news)
+        title: 요약할 기사 모으기(news)
         type: http-request
         url: http://news-service.bbb-namespace.svc.cluster.local:8005/dify/news/channels
         variables: []
@@ -757,11 +215,11 @@ workflow:
       height: 90
       id: papers
       position:
-        x: 2480
-        y: 440
+        x: 380
+        y: 280
       positionAbsolute:
-        x: 2480
-        y: 440
+        x: 380
+        y: 280
       sourcePosition: right
       targetPosition: left
       type: custom
@@ -772,15 +230,17 @@ workflow:
 
 
           def main(body: str, status: int) -> dict:
-              # 못 받으면 "auto" → 버핏 필터(news)가 스스로 신문사 기사를 고른다
+              # 주요뉴스·신문사 구분 없이 news 가 고른다(① 수집이 저장한 기사 포함). 못 받으면 "auto" → 버핏 필터(news)가 스스로 신문사 기사를 고른다
               try:
                   d = json.loads(body or "{}") or {}
               except ValueError:
                   d = {}
               if status != 200 or "channel_ids" not in d:
-                  return {"channel_ids": "auto", "summary": f"신문사 기사 모으기 실패(HTTP {status}) — 버핏 필터가 직접 고름"}
+                  return {"channel_ids": "auto", "summary": f"요약할 기사 모으기 실패(HTTP {status}) — 버핏 필터가 직접 고름",
+                          "article_ids": "", "sources": "[]", "new_count": "0"}
               return {"channel_ids": d.get("channel_ids") or "",
-                      "summary": f"신문사 기사 {d.get('count', 0)}건: {d.get('by_press') or '없음'}"}
+                      "summary": f"요약할 기사 {d.get('count', 0)}건: {d.get('by_press') or '없음'}",
+                      "article_ids": "", "sources": "[]", "new_count": "0"}
         code_language: python3
         desc: 신문사별 건수를 보이게 정리
         outputs:
@@ -790,8 +250,17 @@ workflow:
           summary:
             children: null
             type: string
+          article_ids:
+            children: null
+            type: string
+          sources:
+            children: null
+            type: string
+          new_count:
+            children: null
+            type: string
         selected: false
-        title: 신문사 기사 정리
+        title: 요약할 기사 정리
         type: code
         variables:
         - value_selector:
@@ -805,11 +274,11 @@ workflow:
       height: 90
       id: pparse
       position:
-        x: 2630
-        y: 600
+        x: 680
+        y: 280
       positionAbsolute:
-        x: 2630
-        y: 600
+        x: 680
+        y: 280
       sourcePosition: right
       targetPosition: left
       type: custom
@@ -824,9 +293,9 @@ workflow:
         body:
           data:
           - type: text
-            value: '{"article_ids": "{{#merge.article_ids#}}", "slot": "{{#start.slot#}}", "channel_ids": "{{#pparse.channel_ids#}}"}'
+            value: '{"article_ids": "", "slot": "{{#start.slot#}}", "channel_ids": "{{#pparse.channel_ids#}}", "judge": false}'
           type: json
-        desc: 버핏 필터(news) — 뉴스 채널 기사(한국·미국)도 붙여 시장 소음 → 시총 1조 범위 → 구조적 변화(LLM) → DART 대조, 기사별 5항목 기록
+        desc: ② 상시 판정이 끝낸 결과만 모은다(judge=false, LLM 안 부름). 아직 판정 안 된 기사는 빼고 다음 요약에(2026-11-22 2단계 분리)
         headers: Content-Type:application/json
         method: post
         params: ''
@@ -838,9 +307,9 @@ workflow:
         ssl_verify: false
         timeout:
           max_connect_timeout: 10
-          max_read_timeout: 600
+          max_read_timeout: 120
           max_write_timeout: 30
-        title: 버핏 필터(news)
+        title: 버핏 판정 결과 모으기(news)
         type: http-request
         url: http://news-service.bbb-namespace.svc.cluster.local:8005/dify/news/buffett
         variables: []
@@ -858,11 +327,11 @@ workflow:
       height: 90
       id: buffett
       position:
-        x: 2780
-        y: 120
+        x: 980
+        y: 280
       positionAbsolute:
-        x: 2780
-        y: 120
+        x: 980
+        y: 280
       sourcePosition: right
       targetPosition: left
       type: custom
@@ -917,21 +386,21 @@ workflow:
           - status_code
           variable: status
         - value_selector:
-          - merge
+          - pparse
           - article_ids
           variable: article_ids
         - value_selector:
-          - merge
+          - pparse
           - sources
           variable: sources
       height: 90
       id: bparse
       position:
-        x: 3080
-        y: 120
+        x: 1280
+        y: 280
       positionAbsolute:
-        x: 3080
-        y: 120
+        x: 1280
+        y: 280
       sourcePosition: right
       targetPosition: left
       type: custom
@@ -952,7 +421,7 @@ workflow:
         - id: sys-prompt
           role: system
           text: |-
-            너는 워런 버핏 관점의 투자 기록 담당이다. 아래 <신호> 는 {{#start.slot#}} 기준 새 뉴스 중 버핏 필터를 통과한 것이다.
+            너는 워런 버핏 관점의 투자 기록 담당이다. 아래 <신호> 는 {{#start.slot#}} 기준 앞 요약 뒤에 새로 판정된 뉴스 중 버핏 필터를 통과한 것이다.
             필터: ① 목표주가·급등락·시황·금리·환율 단기 전망·수급·차트 같은 시장 소음을 제목 규칙으로 먼저 제거 ② 시가총액 1조 원 이상 종목(미국은 등록 종목)이 나오는 기사만 ③ 일회성은 빼고 5~10년 해자·자본수익률을 바꾸는 구조적 변화만 ④ DART 공시·사업보고서와 대조.
             규칙:
             - <신호> 에 있는 내용만 쓴다. 없는 사실·숫자를 지어내지 않는다. 문장 끝에 근거 [기사N] 을 그대로 붙인다.
@@ -976,7 +445,7 @@ workflow:
             </신호>
         - id: user-prompt
           role: user
-          text: '{{#start.slot#}} 주요뉴스 요약'
+          text: '{{#start.slot#}} 버핏 뉴스 요약'
         selected: false
         title: 요약(LLM)
         type: llm
@@ -986,10 +455,10 @@ workflow:
       height: 90
       id: llm
       position:
-        x: 2780
+        x: 1580
         y: 280
       positionAbsolute:
-        x: 2780
+        x: 1580
         y: 280
       sourcePosition: right
       targetPosition: left
@@ -1060,7 +529,7 @@ workflow:
           - article_ids
           variable: article_ids
         - value_selector:
-          - merge
+          - pparse
           - new_count
           variable: new_count
         - value_selector:
@@ -1074,10 +543,10 @@ workflow:
       height: 90
       id: finish
       position:
-        x: 3080
+        x: 1880
         y: 280
       positionAbsolute:
-        x: 3080
+        x: 1880
         y: 280
       sourcePosition: right
       targetPosition: left
@@ -1216,10 +685,10 @@ workflow:
       height: 90
       id: tg
       position:
-        x: 3380
+        x: 2180
         y: 280
       positionAbsolute:
-        x: 3380
+        x: 2180
         y: 280
       sourcePosition: right
       targetPosition: left
@@ -1266,10 +735,10 @@ workflow:
       height: 90
       id: send
       position:
-        x: 3680
+        x: 2480
         y: 280
       positionAbsolute:
-        x: 3680
+        x: 2480
         y: 280
       sourcePosition: right
       targetPosition: left
@@ -1288,10 +757,10 @@ workflow:
       height: 90
       id: end
       position:
-        x: 3980
+        x: 2780
         y: 280
       positionAbsolute:
-        x: 3980
+        x: 2780
         y: 280
       sourcePosition: right
       targetPosition: left
