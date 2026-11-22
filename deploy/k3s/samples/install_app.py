@@ -6,7 +6,8 @@ kubectl 되는 곳(맥북)에서:
   python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/naver-mainnews-summary.yml "오늘 주요뉴스 요약"
   APP_ID=<앱 id> python3 deploy/k3s/samples/install_app.py <앱.yml>      # 화면 주소 /app/<id>/workflow 의 앱을 덮어쓰기
   INPUTS='{"period": "30d"}' python3 deploy/k3s/samples/install_app.py <앱.yml> "질문"   # 시작 입력값
-  SAVE_APP_KEY=news-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/news-hourly-summary-workflow.yml  # 앱 키를 bbb Secret 으로
+  SAVE_APP_KEY=news-dify-collect-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/news-collect-workflow.yml  # 버핏 뉴스 ① 수집(매시)
+  SAVE_APP_KEY=news-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/news-hourly-summary-workflow.yml  # 버핏 뉴스 ③ 요약(8·12·15시), 앱 키를 bbb Secret 으로
   SAVE_APP_KEY=ncp-guide-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/ncp-guide-chat.yml "VPC 만드는 방법"  # ccc NCP 가이드
   SAVE_APP_KEY=tech-docs-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/tech-docs-chat.yml "Deployment 롤링 업데이트 설정"  # ccc 기술 문서
   SAVE_APP_KEY=docs-answer-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/docs-answer-workflow.yml "서브넷이 필요한 이유"  # ccc 골라 묻기
@@ -162,7 +163,7 @@ if not existing and _save:
             existing, how = a["id"], f"Secret {_save} 의 키를 가진 앱 '{a.get('name')}'"
             break
 # 이름을 바꾼 앱은 예전 이름으로도 찾는다(새 이름: 예전 이름들)
-OLD_NAMES = {"버핏 뉴스 요약": ["뉴스 시간별 요약"]}
+OLD_NAMES = {"버핏 뉴스 ③ 요약": ["버핏 뉴스 요약", "뉴스 시간별 요약"], "버핏 뉴스 요약": ["뉴스 시간별 요약"]}
 same = [a for a in all_apps if a.get("name") == APP_NAME]
 if not existing and not same:
     same = [a for a in all_apps if a.get("name") in OLD_NAMES.get(APP_NAME, [])]
@@ -213,7 +214,7 @@ if save_as:
     subprocess.run(["kubectl", "apply", "-f", "-"], check=True, capture_output=True, input=json.dumps(
         {"apiVersion": "v1", "kind": "Secret", "type": "Opaque",
          "metadata": {"name": save_as, "namespace": "bbb-namespace"}, "stringData": {"key": tok}}).encode())
-    user_of = {"news-dify-app": "news", "ncp-guide-dify-app": "agent", "tech-docs-dify-app": "agent", "docs-answer-dify-app": "agent"}   # 이 키를 쓰는 bbb 서비스
+    user_of = {"news-dify-app": "news", "news-dify-collect-app": "news", "ncp-guide-dify-app": "agent", "tech-docs-dify-app": "agent", "docs-answer-dify-app": "agent"}   # 이 키를 쓰는 bbb 서비스
     svc = user_of.get(save_as)
     if svc:
         subprocess.run(["kubectl", "-n", "bbb-namespace", "rollout", "restart", f"deploy/{svc}"], check=True, capture_output=True)
@@ -223,13 +224,15 @@ if save_as:
 step(7, f"질문: {QUESTION}")
 t0 = time.monotonic()
 inputs = json.loads(os.getenv("INPUTS", "{}"))
-if save_as == "news-dify-app":
+if save_as in ("news-dify-app", "news-dify-collect-app"):
     # 시간별 요약: Dify 를 바로 부르면 news 에 저장이 안 돼 i3 이력에 안 나온다 → news 를 통해 지금 시간을 다시 돌린다
     subprocess.run(["kubectl", "-n", "bbb-namespace", "rollout", "status", "deploy/news", "--timeout=300s"],
                    check=True, capture_output=True)
+    # ③ 요약은 지금 시각을 다시 요약, ① 수집은 지금 한 번 수집(2026-11-22 2단계 분리)
+    _run_path = "hourly-summary/run?force=true" if save_as == "news-dify-app" else "hourly-collect/run"
     # news 는 서비스 신원이 있어야 받는다(없으면 401). 매시 정각에 부르는 dworker 의 신원(SERVICE_AUTH_*)으로 부른다.
     code_ = ("import os,urllib.request;r=urllib.request.urlopen(urllib.request.Request("
-             "'http://news-service.bbb-namespace.svc.cluster.local:8005/api/v1/news/hourly-summary/run?force=true',"
+             f"'http://news-service.bbb-namespace.svc.cluster.local:8005/api/v1/news/{_run_path}',"
              "method='POST',headers={'X-Service-Name':os.environ['SERVICE_AUTH_NAME'],"
              "'X-Service-Key':os.environ['SERVICE_AUTH_KEY']}),timeout=900);print(r.read().decode())")
     # 다시 띄운 직후에는 끝나 가는 옛 Pod 로 연결이 가서 'Connection refused' 가 날 수 있다(2026-11-19 실측, 21.7초 실패).
