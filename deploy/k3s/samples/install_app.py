@@ -11,7 +11,8 @@ kubectl 되는 곳(맥북)에서:
   SAVE_APP_KEY=ncp-guide-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/ncp-guide-chat.yml "VPC 만드는 방법"  # ccc NCP 가이드
   SAVE_APP_KEY=tech-docs-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/tech-docs-chat.yml "Deployment 롤링 업데이트 설정"  # ccc 기술 문서
   SAVE_APP_KEY=docs-answer-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/docs-answer-workflow.yml "서브넷이 필요한 이유"  # ccc 골라 묻기
-  python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/ai-native-product-report-workflow.yml  # AI Native 생산성 제품 창조(CEO One-Page)
+  SAVE_APP_KEY=startup-collect-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/startup-collect-workflow.yml  # 신규 창업아이템 ① 자료 수집(7·8·13·14시)
+  SAVE_APP_KEY=startup-report-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/startup-report-workflow.yml  # 신규 창업아이템 ③ 보고서(9·15시)
 
 하는 일(다시 돌려도 같은 이름 앱을 덮어쓴다):
   1) DSL 이 rag_api_key·news_api_key·telegram_*·startup_telegram_* 을 쓰면 그 값(Secret bbb-namespace/rag-dify-key·news-dify-key·news-telegram·startup-telegram)을 kubectl 로 읽어 넣는다
@@ -85,7 +86,7 @@ def step(n, msg):
 
 # 1) DSL 이 쓰는 bbb 창구 키(환경 변수 이름 → Secret). 있는 것만 kubectl 로 읽는다.
 SECRET_OF = {"rag_api_key": "rag-dify-key", "news_api_key": "news-dify-key",
-             # agent Dify 창구(/dify/llm/template: Prompt Templates 로 LLM 부르기, 준비: samples/ai-native-product-report.md)
+             # agent Dify 창구(/dify/llm/template·/dify/startup/*: 신규 창업아이템, 준비: samples/ai-native-product-report.md)
              "agent_api_key": "agent-dify-key",
              # 텔레그램(준비: samples/telegram_setup.py) — Secret 이름:칸 이름
              "telegram_bot_token": "news-telegram:token", "telegram_chat_id": "news-telegram:chat_id",
@@ -223,7 +224,8 @@ if save_as:
     subprocess.run(["kubectl", "apply", "-f", "-"], check=True, capture_output=True, input=json.dumps(
         {"apiVersion": "v1", "kind": "Secret", "type": "Opaque",
          "metadata": {"name": save_as, "namespace": "bbb-namespace"}, "stringData": {"key": tok}}).encode())
-    user_of = {"news-dify-app": "news", "news-dify-collect-app": "news", "ncp-guide-dify-app": "agent", "tech-docs-dify-app": "agent", "docs-answer-dify-app": "agent"}   # 이 키를 쓰는 bbb 서비스
+    user_of = {"news-dify-app": "news", "news-dify-collect-app": "news", "ncp-guide-dify-app": "agent", "tech-docs-dify-app": "agent", "docs-answer-dify-app": "agent",
+               "startup-collect-dify-app": "agent", "startup-report-dify-app": "agent"}   # 이 키를 쓰는 bbb 서비스
     svc = user_of.get(save_as)
     if svc:
         subprocess.run(["kubectl", "-n", "bbb-namespace", "rollout", "restart", f"deploy/{svc}"], check=True, capture_output=True)
@@ -262,6 +264,35 @@ if save_as in ("news-dify-app", "news-dify-collect-app"):
     need(res.get("status") == "done", f"news 를 통한 실행 실패({sec:.1f}초)", out.stdout[-1500:] + out.stderr[-1500:])
     print(f"\n===== news 저장 완료 ({sec:.1f}초) · 기사 {res.get('articles')}건 · {res.get('slot')} =====")
     print("i3 News › 뉴스 요약(시간별) 이력과 텔레그램에서 확인하세요")
+elif save_as in ("startup-collect-dify-app", "startup-report-dify-app"):
+    # 신규 창업아이템: Dify 를 바로 부르면 수집 기록·보고서 번호가 안 남는다 → agent 를 통해 지금 한 번 돌린다(시간표와 같은 길)
+    subprocess.run(["kubectl", "-n", "bbb-namespace", "rollout", "status", "deploy/agent", "--timeout=300s"],
+                   check=True, capture_output=True)
+    _run_path = "collect/run" if save_as == "startup-collect-dify-app" else "report/run"
+    code_ = ("import os,urllib.request;r=urllib.request.urlopen(urllib.request.Request("
+             f"'http://agent-service.bbb-namespace.svc.cluster.local:8000/api/v1/agents/startup/{_run_path}',"
+             "data=b'{}',method='POST',headers={'Content-Type':'application/json','X-Service-Name':os.environ['SERVICE_AUTH_NAME'],"
+             "'X-Service-Key':os.environ['SERVICE_AUTH_KEY']}),timeout=1600);print(r.read().decode())")
+    for attempt in range(6):
+        out = subprocess.run(["kubectl", "-n", "bbb-namespace", "exec", "deploy/dworker", "--", "python", "-c", code_],
+                             capture_output=True, text=True)
+        if out.returncode == 0 or "Connection refused" not in out.stderr:
+            break
+        print(f"    → agent 가 아직 연결을 안 받음(Connection refused), 10초 뒤 다시 ({attempt + 1}/6)")
+        time.sleep(10)
+    sec = time.monotonic() - t0
+    res = {}
+    try:
+        res = json.loads(out.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        pass
+    need(res.get("status") == "done", f"agent 를 통한 실행 실패({sec:.1f}초)", out.stdout[-1500:] + out.stderr[-1500:])
+    if save_as == "startup-collect-dify-app":
+        print(f"\n===== 수집 완료 ({sec:.1f}초) · 저장 {res.get('saved')}건 · 부족 {res.get('shortfall')}건 =====")
+        print("자료별 분석(②)은 agent 가 지금부터 한 건씩 함(50건 ≈ 30~60분). i3 › AI › 신규 창업아이템 자료 조사에서 '분석 끝' 수 확인")
+    else:
+        print(f"\n===== 보고서 완료 ({sec:.1f}초) · 보고서 #{res.get('report_id')} · 텔레그램 {res.get('telegram')} =====")
+        print("i3 › AI › 신규 창업아이템 보고서에서 확인")
 elif "\n  mode: workflow" in dsl:
     # 워크플로 앱: 질문은 시작 입력 request 로 넣고 /v1/workflows/run 의 outputs 를 본다
     if "variable: question" in dsl:   # 문서 골라 묻기: 질문 칸 이름이 question

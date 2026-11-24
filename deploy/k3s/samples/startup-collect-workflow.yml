@@ -1,0 +1,1015 @@
+# 신규 창업아이템 ① 자료 수집(2026-11-24 사용자 결정, 설계서 https://claude.ai/artifact/B7ce6SBn3HGakCXWw3nfxH).
+# 흐름: 시작(run_id·page) → 검색 주소 12개 → Ego Lite 로 Google 8·YouTube 4 검색(동시) → 후보 고르기(웹 60·영상 24)
+#   → agent 중복 확인 → 웹 본문·영상 자막 열기(동시) → 300자 넘는 것만 agent 저장(웹·영상 따로) → 끝.
+# LLM 없음. 저장하면 agent 가 자료별 분석(②, 템플릿 startup.item.analyze)을 바로 한다.
+# 브라우저는 사용자 Ego Lite 앱 하나(ego 서비스 CDP)만 쓴다. 다른 브라우저를 띄우지 않는다.
+# 시간표: bbb dworker startup_collect(7·8·13·14시) → agent /api/v1/agents/startup/collect/run → 이 앱(앱 키 Secret startup-collect-dify-app).
+# 올리기: deploy/k3s/samples/ai-native-product-report.md
+app:
+  description: Ego Lite 로 Google·YouTube 를 검색해 웹 문서·영상 자막을 모아 bbb agent 에 저장(LLM 없음)
+  icon: 🔎
+  icon_background: '#EDE9FE'
+  mode: workflow
+  name: 신규 창업아이템 ① 자료 수집
+  use_icon_as_answer_icon: false
+kind: app
+version: 0.7.0
+workflow:
+  conversation_variables: []
+  environment_variables:
+  - description: bbb agent Dify 창구 키(Secret bbb-namespace/agent-dify-key)
+    id: 7d5e6f80-91a2-43b4-8ed5-f6071829a045
+    name: agent_api_key
+    value: ''
+    value_type: secret
+  features:
+    file_upload:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        sourceType: start
+        targetType: code
+      id: start-build
+      source: start
+      sourceHandle: source
+      target: build
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: build-s_web
+      source: build
+      sourceHandle: source
+      target: s_web
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: build-s_yt
+      source: build
+      sourceHandle: source
+      target: s_yt
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: code
+      id: s_web-pick
+      source: s_web
+      sourceHandle: source
+      target: pick
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: code
+      id: s_yt-pick
+      source: s_yt
+      sourceHandle: source
+      target: pick
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: pick-check
+      source: pick
+      sourceHandle: source
+      target: check
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: code
+      id: check-plan
+      source: check
+      sourceHandle: source
+      target: plan
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: plan-pages
+      source: plan
+      sourceHandle: source
+      target: pages
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: plan-trs
+      source: plan
+      sourceHandle: source
+      target: trs
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: code
+      id: pages-g_web
+      source: pages
+      sourceHandle: source
+      target: g_web
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: code
+      id: trs-g_yt
+      source: trs
+      sourceHandle: source
+      target: g_yt
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: g_web-save_web
+      source: g_web
+      sourceHandle: source
+      target: save_web
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: g_yt-save_yt
+      source: g_yt
+      sourceHandle: source
+      target: save_yt
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: code
+      id: save_web-sum
+      source: save_web
+      sourceHandle: source
+      target: sum
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: code
+      id: save_yt-sum
+      source: save_yt
+      sourceHandle: source
+      target: sum
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: end
+      id: sum-end
+      source: sum
+      sourceHandle: source
+      target: end
+      targetHandle: target
+      type: custom
+    nodes:
+    - data:
+        desc: agent 가 시간표(7·8·13·14시)로 부른다. Dify 화면에서 손으로 돌려도 된다
+        selected: false
+        title: 시작
+        type: start
+        variables:
+        - label: 수집 기록 번호(agent 가 넣음, 비워도 됨)
+          max_length: 20
+          options: []
+          required: false
+          type: text-input
+          variable: run_id
+          default: ''
+        - label: 검색 쪽(1 또는 2)
+          max_length: 1
+          options: []
+          required: false
+          type: text-input
+          variable: page
+          default: '1'
+        - label: 시각(YYYY-MM-DD HH:00)
+          max_length: 20
+          options: []
+          required: false
+          type: text-input
+          variable: slot
+          default: ''
+      height: 90
+      id: start
+      position:
+        x: 80
+        y: 300
+      positionAbsolute:
+        x: 80
+        y: 300
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+          from urllib.parse import quote_plus
+
+          # 검색어(설계서 ①): 개발 민주화·수작업 자동화·AI 창업 기회 세 축, 한국어·영어
+          GOOGLE = ["AI 에이전트 스타트업 창업 아이템", "AI 업무 자동화 SaaS 사례", "생성형 AI 생산성 도구 시장 규모",
+                    "바이브코딩 1인 창업 수익", "AI agent startup productivity tool launch",
+                    "AI native SaaS workflow automation startup funding", "vertical AI agent small business automation",
+                    "no-code AI app builder trend"]
+          YOUTUBE = ["AI 에이전트 창업", "AI 자동화 SaaS 부업", "AI agent startup ideas", "vibe coding SaaS build"]
+
+
+          def main(page: str) -> dict:
+              p2 = str(page or "1").strip() == "2"
+              # Google: 최근 1달(tbs=qdr:m), 2쪽 = start=10. YouTube: 이번 달(sp=EgIIBA), 2쪽 = 업로드 날짜순(sp=CAI)
+              g = [f"https://www.google.com/search?q={quote_plus(q)}&hl=ko&num=20&tbs=qdr:m" + ("&start=10" if p2 else "")
+                   for q in GOOGLE]
+              y = [f"https://www.youtube.com/results?search_query={quote_plus(q)}&sp=" + ("CAI%253D" if p2 else "EgIIBA%253D%253D")
+                   for q in YOUTUBE]
+              body = lambda urls: json.dumps({"urls": urls, "wait_until": "domcontentloaded", "wait_ms": 2500,
+                                              "max_chars": 200, "include_links": True}, ensure_ascii=False)
+              return {"web_body": body(g), "yt_body": body(y), "queries": json.dumps(GOOGLE + YOUTUBE, ensure_ascii=False),
+                      "page_used": "2" if p2 else "1"}
+        code_language: python3
+        desc: Google 8개 + YouTube 4개 검색어 → Ego Lite 로 열 주소(2쪽이면 다음 결과)
+        outputs:
+          web_body:
+            children: null
+            type: string
+          yt_body:
+            children: null
+            type: string
+          queries:
+            children: null
+            type: string
+          page_used:
+            children: null
+            type: string
+        selected: false
+        title: 검색 주소 만들기
+        type: code
+        variables:
+        - value_selector:
+          - start
+          - page
+          variable: page
+      height: 90
+      id: build
+      position:
+        x: 380
+        y: 300
+      positionAbsolute:
+        x: 380
+        y: 300
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config: null
+          type: no-auth
+        body:
+          data:
+          - type: text
+            value: '{{#build.web_body#}}'
+          type: json
+        desc: 사용자 Ego Lite 앱으로 검색 결과 화면의 링크를 읽는다(다른 브라우저 안 씀)
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 2000
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 300
+          max_write_timeout: 30
+        title: Google 검색 8개(Ego Lite)
+        type: http-request
+        url: http://ego.bbb-namespace.svc.cluster.local:8017/api/v1/ego/pages
+        variables: []
+        error_strategy: default-value
+        default_value: &id001
+        - key: body
+          type: string
+          value: ''
+        - key: status_code
+          type: number
+          value: 0
+        - key: headers
+          type: object
+          value: {}
+      height: 90
+      id: s_web
+      position:
+        x: 680
+        y: 160
+      positionAbsolute:
+        x: 680
+        y: 160
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config: null
+          type: no-auth
+        body:
+          data:
+          - type: text
+            value: '{{#build.yt_body#}}'
+          type: json
+        desc: 같은 Ego Lite 로 YouTube 검색 결과(이번 달)를 읽는다
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 2000
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 300
+          max_write_timeout: 30
+        title: YouTube 검색 4개(Ego Lite)
+        type: http-request
+        url: http://ego.bbb-namespace.svc.cluster.local:8017/api/v1/ego/pages
+        variables: []
+        error_strategy: default-value
+        default_value: *id001
+      height: 90
+      id: s_yt
+      position:
+        x: 680
+        y: 440
+      positionAbsolute:
+        x: 680
+        y: 440
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+          import re
+          from urllib.parse import parse_qs, urlparse
+
+          SKIP = re.compile(r"(^|\.)(google\.[a-z.]+|gstatic\.com|googleusercontent\.com|googleadservices\.com|youtube\.com|"
+                            r"youtu\.be|blogger\.com|webcache\.googleusercontent\.com)$")
+          VID = re.compile(r"[?&]v=([A-Za-z0-9_-]{11})")
+          WEB_MAX, YT_MAX, PER_SITE = 60, 24, 3
+
+
+          def pages(body):
+              try:
+                  return (json.loads(body or "{}") or {}).get("items") or []
+              except ValueError:
+                  return []
+
+
+          def real(href):
+              p = urlparse(href)
+              if p.path == "/url" and "q" in parse_qs(p.query):   # Google 이 /url?q=<진짜 주소> 로 감싸는 경우
+                  return parse_qs(p.query)["q"][0]
+              return href
+
+
+          def query_of(url):
+              q = parse_qs(urlparse(url).query)
+              return (q.get("q") or q.get("search_query") or [""])[0]
+
+
+          def main(web: str, yt: str) -> dict:
+              web_c, sites, seen = [], {}, set()
+              g_ok = y_ok = 0
+              rounds = [[(query_of(p.get("url") or ""), l) for l in (p.get("links") or [])] for p in pages(web)]
+              g_ok = sum(1 for r in rounds if r)
+              # 검색어마다 위에서부터 돌아가며 한 개씩 → 한 검색어에 몰리지 않는다
+              for i in range(max([len(r) for r in rounds] or [0])):
+                  for r in rounds:
+                      if i >= len(r) or len(web_c) >= WEB_MAX:
+                          continue
+                      q, l = r[i]
+                      href = real(str(l.get("href") or "").split("#")[0])
+                      text = " ".join(str(l.get("text") or "").split())
+                      host = (urlparse(href).hostname or "").lower().removeprefix("www.")
+                      if not href.startswith("http") or not host or SKIP.search(host) or len(text) < 10 or href in seen:
+                          continue
+                      if href.lower().endswith((".pdf", ".zip", ".hwp")) or sites.get(host, 0) >= PER_SITE:
+                          continue
+                      sites[host] = sites.get(host, 0) + 1
+                      seen.add(href)
+                      web_c.append({"url": href, "query": q, "title": text[:200], "site": host})
+              vids = []
+              for p in pages(yt):
+                  q = query_of(p.get("url") or "")
+                  links = p.get("links") or []
+                  y_ok += 1 if links else 0
+                  for l in links:
+                      href = str(l.get("href") or "")
+                      m = VID.search(href)
+                      if not m or "/shorts/" in href or any(v["id"] == m.group(1) for v in vids):
+                          continue
+                      vids.append({"id": m.group(1), "query": q, "url": f"https://www.youtube.com/watch?v={m.group(1)}"})
+                      if len(vids) >= YT_MAX:
+                          break
+              cands = web_c + vids
+              return {"check_body": json.dumps({"urls": [x["url"] for x in cands]}, ensure_ascii=False),
+                      "cands": json.dumps({"web": web_c, "yt": vids}, ensure_ascii=False),
+                      "note": f"Google 검색 {g_ok}/8 · YouTube 검색 {y_ok}/4 · 후보 웹 {len(web_c)} · 영상 {len(vids)}",
+                      "count": str(len(cands))}
+        code_language: python3
+        desc: 웹 최대 60개(사이트당 3개), 영상 최대 24개(쇼츠 제외)
+        outputs:
+          check_body:
+            children: null
+            type: string
+          cands:
+            children: null
+            type: string
+          note:
+            children: null
+            type: string
+          count:
+            children: null
+            type: string
+        selected: false
+        title: 후보 고르기
+        type: code
+        variables:
+        - value_selector:
+          - s_web
+          - body
+          variable: web
+        - value_selector:
+          - s_yt
+          - body
+          variable: yt
+      height: 90
+      id: pick
+      position:
+        x: 980
+        y: 300
+      positionAbsolute:
+        x: 980
+        y: 300
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config:
+            api_key: '{{#env.agent_api_key#}}'
+            header: ''
+            type: bearer
+          type: api-key
+        body:
+          data:
+          - type: text
+            value: '{{#pick.check_body#}}'
+          type: json
+        desc: 주소가 이미 저장된 자료는 다시 열지 않는다
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 2000
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 60
+          max_write_timeout: 30
+        title: 이미 모은 자료 빼기(agent)
+        type: http-request
+        url: http://agent-service.bbb-namespace.svc.cluster.local:8000/dify/startup/check
+        variables: []
+        error_strategy: default-value
+        default_value: *id001
+      height: 90
+      id: check
+      position:
+        x: 1280
+        y: 300
+      positionAbsolute:
+        x: 1280
+        y: 300
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+
+
+          def main(check: str, status: int, cands: str) -> dict:
+              try:
+                  new = set((json.loads(check or "{}") or {}).get("new") or [])
+              except ValueError:
+                  new = set()
+              c = json.loads(cands or "{}")
+              if status != 200:          # 중복 확인이 안 되면 다 연다(저장할 때 주소로 한 번 더 거른다)
+                  new = {x["url"] for x in c.get("web", []) + c.get("yt", [])}
+              web = [x for x in c.get("web", []) if x["url"] in new]
+              yt = [x for x in c.get("yt", []) if x["url"] in new]
+              return {"pages_body": json.dumps({"urls": [x["url"] for x in web] or ["about:blank"], "wait_until": "domcontentloaded",
+                                                "wait_ms": 1200, "max_chars": 3500}, ensure_ascii=False),
+                      "tr_body": json.dumps({"video_ids": [x["id"] for x in yt] or ["none0000000"], "langs": ["ko", "en"],
+                                             "max_chars": 5000}),
+                      "web": json.dumps(web, ensure_ascii=False), "yt": json.dumps(yt, ensure_ascii=False),
+                      "note": f"새 자료 웹 {len(web)} · 영상 {len(yt)}"}
+        code_language: python3
+        desc: 새 주소만 본문(웹)·자막(영상)을 연다
+        outputs:
+          pages_body:
+            children: null
+            type: string
+          tr_body:
+            children: null
+            type: string
+          web:
+            children: null
+            type: string
+          yt:
+            children: null
+            type: string
+          note:
+            children: null
+            type: string
+        selected: false
+        title: 열 자료 정하기
+        type: code
+        variables:
+        - value_selector:
+          - check
+          - body
+          variable: check
+        - value_selector:
+          - check
+          - status_code
+          variable: status
+        - value_selector:
+          - pick
+          - cands
+          variable: cands
+      height: 90
+      id: plan
+      position:
+        x: 1580
+        y: 300
+      positionAbsolute:
+        x: 1580
+        y: 300
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config: null
+          type: no-auth
+        body:
+          data:
+          - type: text
+            value: '{{#plan.pages_body#}}'
+          type: json
+        desc: 고른 웹 문서를 Ego Lite 숨김 탭으로 연다(동시 탭 수는 ego 가 막음)
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 0
+          retry_enabled: false
+          retry_interval: 2000
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 600
+          max_write_timeout: 30
+        title: 웹 본문 열기(Ego Lite)
+        type: http-request
+        url: http://ego.bbb-namespace.svc.cluster.local:8017/api/v1/ego/pages
+        variables: []
+        error_strategy: default-value
+        default_value: *id001
+      height: 90
+      id: pages
+      position:
+        x: 1880
+        y: 160
+      positionAbsolute:
+        x: 1880
+        y: 160
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config: null
+          type: no-auth
+        body:
+          data:
+          - type: text
+            value: '{{#plan.tr_body#}}'
+          type: json
+        desc: 영상 자막·업로드일·채널(자막 없으면 설명글)
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 0
+          retry_enabled: false
+          retry_interval: 2000
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 600
+          max_write_timeout: 30
+        title: 영상 자막 읽기(Ego Lite)
+        type: http-request
+        url: http://ego.bbb-namespace.svc.cluster.local:8017/api/v1/ego/youtube/transcripts
+        variables: []
+        error_strategy: default-value
+        default_value: *id001
+      height: 90
+      id: trs
+      position:
+        x: 1880
+        y: 440
+      positionAbsolute:
+        x: 1880
+        y: 440
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+
+
+          def main(body: str, web: str, run_id: str, page: str, queries: str, count: str, note: str, note2: str) -> dict:
+              try:
+                  got = {x.get("url"): x for x in (json.loads(body or "{}") or {}).get("items") or []}
+              except ValueError:
+                  got = {}
+              items = []
+              for w in json.loads(web or "[]"):
+                  it = got.get(w["url"]) or {}
+                  text = (it.get("text") or "").strip()
+                  if it.get("error") or not text:
+                      continue
+                  items.append({"kind": "web", "query": w.get("query") or "", "url": w["url"],
+                                "title": (it.get("title") or w.get("title") or "")[:300], "site": w.get("site") or "", "text": text})
+              rid = str(run_id or "").strip()
+              return {"save_body": json.dumps({"run_id": int(rid) if rid.isdigit() else None, "page": int(page or 1),
+                                               "queries": json.loads(queries or "[]"), "candidates": int(count or 0),
+                                               "note": f"{note} · {note2}", "items": items}, ensure_ascii=False),
+                      "n": str(len(items))}
+        code_language: python3
+        desc: 300자 넘는 본문만 저장 목록에
+        outputs:
+          save_body:
+            children: null
+            type: string
+          n:
+            children: null
+            type: string
+        selected: false
+        title: 웹 자료 정리
+        type: code
+        variables:
+        - value_selector:
+          - pages
+          - body
+          variable: body
+        - value_selector:
+          - plan
+          - web
+          variable: web
+        - value_selector:
+          - start
+          - run_id
+          variable: run_id
+        - value_selector:
+          - build
+          - page_used
+          variable: page
+        - value_selector:
+          - build
+          - queries
+          variable: queries
+        - value_selector:
+          - pick
+          - count
+          variable: count
+        - value_selector:
+          - pick
+          - note
+          variable: note
+        - value_selector:
+          - plan
+          - note
+          variable: note2
+      height: 90
+      id: g_web
+      position:
+        x: 2180
+        y: 160
+      positionAbsolute:
+        x: 2180
+        y: 160
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+
+
+          def main(body: str, yt: str, run_id: str, page: str) -> dict:
+              try:
+                  got = {x.get("video_id"): x for x in (json.loads(body or "{}") or {}).get("items") or []}
+              except ValueError:
+                  got = {}
+              items = []
+              for y in json.loads(yt or "[]"):
+                  v = got.get(y["id"]) or {}
+                  sub = (v.get("subtitle") or "").strip()
+                  text = sub or (v.get("description") or "").strip()
+                  if v.get("error") and not text:
+                      continue
+                  kind = "자막" if sub else "설명글"
+                  items.append({"kind": "youtube", "query": y.get("query") or "", "url": y["url"],
+                                "title": (v.get("title") or "")[:300], "site": (v.get("channel") or "YouTube")[:200],
+                                "published": v.get("upload_date") or "", "text": f"[{kind}] {text}" if text else ""})
+              rid = str(run_id or "").strip()
+              return {"save_body": json.dumps({"run_id": int(rid) if rid.isdigit() else None, "page": int(page or 1),
+                                               "items": items}, ensure_ascii=False), "n": str(len(items))}
+        code_language: python3
+        desc: 자막(없으면 설명글)이 300자 넘는 영상만 저장 목록에
+        outputs:
+          save_body:
+            children: null
+            type: string
+          n:
+            children: null
+            type: string
+        selected: false
+        title: 영상 자료 정리
+        type: code
+        variables:
+        - value_selector:
+          - trs
+          - body
+          variable: body
+        - value_selector:
+          - plan
+          - yt
+          variable: yt
+        - value_selector:
+          - start
+          - run_id
+          variable: run_id
+        - value_selector:
+          - build
+          - page_used
+          variable: page
+      height: 90
+      id: g_yt
+      position:
+        x: 2180
+        y: 440
+      positionAbsolute:
+        x: 2180
+        y: 440
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config:
+            api_key: '{{#env.agent_api_key#}}'
+            header: ''
+            type: bearer
+          type: api-key
+        body:
+          data:
+          - type: text
+            value: '{{#g_web.save_body#}}'
+          type: json
+        desc: agent 가 저장하고 바로 자료별 분석(②)을 시작한다
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 2000
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 120
+          max_write_timeout: 30
+        title: 웹 자료 저장(agent)
+        type: http-request
+        url: http://agent-service.bbb-namespace.svc.cluster.local:8000/dify/startup/save
+        variables: []
+        error_strategy: default-value
+        default_value: *id001
+      height: 90
+      id: save_web
+      position:
+        x: 2480
+        y: 160
+      positionAbsolute:
+        x: 2480
+        y: 160
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config:
+            api_key: '{{#env.agent_api_key#}}'
+            header: ''
+            type: bearer
+          type: api-key
+        body:
+          data:
+          - type: text
+            value: '{{#g_yt.save_body#}}'
+          type: json
+        desc: agent 가 저장하고 바로 자료별 분석(②)을 시작한다
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 2000
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 120
+          max_write_timeout: 30
+        title: 영상 자료 저장(agent)
+        type: http-request
+        url: http://agent-service.bbb-namespace.svc.cluster.local:8000/dify/startup/save
+        variables: []
+        error_strategy: default-value
+        default_value: *id001
+      height: 90
+      id: save_yt
+      position:
+        x: 2480
+        y: 440
+      positionAbsolute:
+        x: 2480
+        y: 440
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+
+
+          def load(b):
+              try:
+                  return json.loads(b or "{}") or {}
+              except ValueError:
+                  return {}
+
+
+          def main(w: str, ws: int, y: str, ys: int, note: str, note2: str) -> dict:
+              a, b = load(w), load(y)
+              saved = int(a.get("saved") or 0) + int(b.get("saved") or 0)
+              short = int(a.get("short_skipped") or 0) + int(b.get("short_skipped") or 0)
+              fail = [n for n, s in (("웹 저장", ws), ("영상 저장", ys)) if s != 200]
+              line = (f"저장 {saved}건(짧아서 뺌 {short}) · {note} · {note2}" + (f" · 목표 50건 중 부족 {50 - saved}" if saved < 50 else "")
+                      + (f" · 실패: {', '.join(fail)}" if fail else ""))
+              return {"result": line, "saved": str(saved)}
+        code_language: python3
+        desc: 저장 건수·부족 건수
+        outputs:
+          result:
+            children: null
+            type: string
+          saved:
+            children: null
+            type: string
+        selected: false
+        title: 결과 정리
+        type: code
+        variables:
+        - value_selector:
+          - save_web
+          - body
+          variable: w
+        - value_selector:
+          - save_web
+          - status_code
+          variable: ws
+        - value_selector:
+          - save_yt
+          - body
+          variable: y
+        - value_selector:
+          - save_yt
+          - status_code
+          variable: ys
+        - value_selector:
+          - pick
+          - note
+          variable: note
+        - value_selector:
+          - plan
+          - note
+          variable: note2
+      height: 90
+      id: sum
+      position:
+        x: 2780
+        y: 300
+      positionAbsolute:
+        x: 2780
+        y: 300
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 저장 결과 한 줄
+        outputs:
+        - value_selector:
+          - sum
+          - result
+          variable: result
+        - value_selector:
+          - sum
+          - saved
+          variable: saved
+        selected: false
+        title: 끝
+        type: end
+      height: 90
+      id: end
+      position:
+        x: 3080
+        y: 300
+      positionAbsolute:
+        x: 3080
+        y: 300
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.5
