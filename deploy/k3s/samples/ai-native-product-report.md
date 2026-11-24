@@ -39,6 +39,9 @@ kubectl -n bbb-namespace rollout restart deploy/agent
 cd ~/projects/dify && git pull
 TELEGRAM_SECRET=startup-telegram python3 deploy/k3s/samples/telegram_setup.py
 
+# ②-1 Dify 검문소(ssrf-proxy)가 agent 주소를 열도록 다시 적용(한 번만)
+python3 deploy/k3s/provision.py --apply
+
 # ③ 수집 앱 올리기 → 지금 한 번 수집(10~20분)
 SAVE_APP_KEY=startup-collect-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/startup-collect-workflow.yml
 
