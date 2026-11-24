@@ -1,5 +1,8 @@
 # AI Native 생산성 제품 창조 — Dify 워크플로 설계 (2026-11-24, 2차)
 
+- 최종 설계서(전체): https://claude.ai/artifact/B7ce6SBn3HGakCXWw3nfxH — 이 파일은 그중 첫 Dify 초안(③ 보고서 쪽) 설명임. ① 자료 수집 앱·② 자료별 분석·i3 화면은 승인 뒤 만듦.
+- 텔레그램은 버핏 뉴스와 다른 새 채널: Secret `startup-telegram`, 준비 `TELEGRAM_SECRET=startup-telegram python3 deploy/k3s/samples/telegram_setup.py` (dify #66).
+
 - 사용자 요청
   - 1차: Dify 에 "AI Native 생산성 제품 창조" 앱을 만든다. 사용자 시스템 프롬프트로 CEO 용 One-Page 보고서를 쓴다. 흐름은 버핏 뉴스와 같게 한다.
   - 2차: 프롬프트는 bbb **Prompt Templates** 에 "Creating AI-Native Productivity Products" 로 등록함. 자료는 **YouTube 와 Ego Lite 외부 검색**으로 다시 설계한다.
@@ -61,4 +64,4 @@ INPUTS='{"focus": "", "period": "30d"}' python3 deploy/k3s/samples/install_app.p
 ## 5. 남은 결정
 
 - 실행 시점: 손으로(Dify 화면) / 정기(예: 매주 월 08:00, bbb dworker 시간표·저장 필요)
-- 텔레그램: 버핏 뉴스 방에 같이 보냄 / 끔
+
