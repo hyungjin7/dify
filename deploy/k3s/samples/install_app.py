@@ -11,6 +11,7 @@ kubectl 되는 곳(맥북)에서:
   SAVE_APP_KEY=ncp-guide-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/ncp-guide-chat.yml "VPC 만드는 방법"  # ccc NCP 가이드
   SAVE_APP_KEY=tech-docs-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/tech-docs-chat.yml "Deployment 롤링 업데이트 설정"  # ccc 기술 문서
   SAVE_APP_KEY=docs-answer-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/docs-answer-workflow.yml "서브넷이 필요한 이유"  # ccc 골라 묻기
+  python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/ai-native-product-report-workflow.yml  # AI Native 생산성 제품 창조(CEO One-Page)
 
 하는 일(다시 돌려도 같은 이름 앱을 덮어쓴다):
   1) DSL 이 rag_api_key·news_api_key·telegram_* 을 쓰면 그 값(Secret bbb-namespace/rag-dify-key·news-dify-key·news-telegram)을 kubectl 로 읽어 넣는다

@@ -1,0 +1,883 @@
+# AI Native 생산성 제품 창조(2026-11-24 사용자 요청: 버핏 뉴스와 기본 흐름을 같게, 주제만 "AI 시대 창업 아이템").
+# 흐름(버핏 뉴스 ③ 요약과 같은 뼈대: 자료 모으기 → 자료 정리 → LLM 보고서 → 결과 정리 → 텔레그램 → 끝)
+#   시작(slot·관심 분야·기간) → 검색 요청 만들기 → 우리 RAG 3갈래 동시 검색(AI 창업·투자 / 업무 자동화 / AI 개발 도구)
+#   → 근거 자료 정리([자료N] 번호·게시일) → gemma One-Page 보고서 → 결과 정리(출처를 실제 인용한 자료로 다시 씀) → 텔레그램 → 끝.
+# 버핏 뉴스에서 뺀 단계: ego 수집·news 저장(새로 모을 기사가 아니라 이미 모은 자료를 찾음), 시장 소음 제목 규칙·시총 1조 범위·
+#   해자 5항목 점수·DART 대조(상장 종목 전용 규칙이라 창업 아이템에는 안 맞음), 상시 판정 2단계(보고서 1편이라 필요 없음).
+# 근거 규칙: 숫자·통계는 <자료> 에 있는 것만 [자료N]·게시일과 함께 쓰고, 없으면 "확인 필요"로 적는다(사용자 지시).
+# 올리기(앱을 만들 때만, 사용자 확인 뒤): python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/ai-native-product-report-workflow.yml
+#   시작 입력: INPUTS='{"focus": "물류 정산", "period": "30d"}' 처럼 줄 수 있다. 키(rag_api_key·telegram_*)는 install_app.py 가 Secret 에서 넣는다.
+app:
+  description: 'AI 시대 스타트업 신규 창업 아이템·실행 전략을 CEO 용 One-Page(500~1000자) 두괄식 보고서로. 근거 = bbb RAG(뉴스·YouTube·리포트)'
+  icon: 🚀
+  icon_background: '#EDE9FE'
+  mode: workflow
+  name: AI Native 생산성 제품 창조
+  use_icon_as_answer_icon: false
+kind: app
+version: 0.7.0
+workflow:
+  conversation_variables: []
+  environment_variables:
+  - description: bbb RAG 외부 지식 키(Secret bbb-namespace/rag-dify-key)
+    id: 3f1a2b4c-5d6e-4f70-8a91-b2c3d4e5f601
+    name: rag_api_key
+    value: ''
+    value_type: secret
+  - description: 텔레그램 봇 토큰(Secret bbb-namespace/news-telegram 의 token, 버핏 뉴스와 같은 방)
+    id: 4a2b3c5d-6e7f-4081-9ba2-c3d4e5f60712
+    name: telegram_bot_token
+    value: ''
+    value_type: secret
+  - description: 텔레그램 받을 채팅방 id(Secret bbb-namespace/news-telegram 의 chat_id)
+    id: 5b3c4d6e-7f80-4192-acb3-d4e5f6071823
+    name: telegram_chat_id
+    value: ''
+    value_type: string
+  features:
+    file_upload:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        sourceType: start
+        targetType: code
+      id: start-build
+      source: start
+      sourceHandle: source
+      target: build
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: build-s_startup
+      source: build
+      sourceHandle: source
+      target: s_startup
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: build-s_auto
+      source: build
+      sourceHandle: source
+      target: s_auto
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: build-s_dev
+      source: build
+      sourceHandle: source
+      target: s_dev
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: code
+      id: s_startup-gather
+      source: s_startup
+      sourceHandle: source
+      target: gather
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: code
+      id: s_auto-gather
+      source: s_auto
+      sourceHandle: source
+      target: gather
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: code
+      id: s_dev-gather
+      source: s_dev
+      sourceHandle: source
+      target: gather
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: llm
+      id: gather-llm
+      source: gather
+      sourceHandle: source
+      target: llm
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: llm
+        targetType: code
+      id: llm-finish
+      source: llm
+      sourceHandle: source
+      target: finish
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: code
+      id: finish-tg
+      source: finish
+      sourceHandle: source
+      target: tg
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+      id: tg-send
+      source: tg
+      sourceHandle: source
+      target: send
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: end
+      id: send-end
+      source: send
+      sourceHandle: source
+      target: end
+      targetHandle: target
+      type: custom
+    nodes:
+    - data:
+        desc: 손으로 돌리거나(Dify 화면 실행) 나중에 시간표가 slot 을 넣어 부른다
+        selected: false
+        title: 시작
+        type: start
+        variables:
+        - label: 관심 분야(비우면 전체)
+          max_length: 100
+          options: []
+          required: false
+          type: text-input
+          variable: focus
+          default: ''
+        - label: 자료 기간(7d·30d·90d)
+          max_length: 5
+          options: []
+          required: false
+          type: text-input
+          variable: period
+          default: 30d
+        - label: 근거 자료 수(최대 20)
+          max_length: 2
+          options: []
+          required: false
+          type: text-input
+          variable: count
+          default: '12'
+        - label: 작성일(YYYY-MM-DD, 비우면 오늘 KST)
+          max_length: 20
+          options: []
+          required: false
+          type: text-input
+          variable: slot
+          default: ''
+      height: 90
+      id: start
+      position:
+        x: 80
+        y: 280
+      positionAbsolute:
+        x: 80
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+          import re
+          from datetime import datetime, timedelta, timezone
+
+          # 갈래별 검색어(AI 창업 아이템의 세 근거: 시장·투자 / 수작업 자동화 / 개발 민주화). 관심 분야가 있으면 앞에 붙인다.
+          QUERIES = {
+              "startup": "AI 스타트업 창업 투자 유치 AI 에이전트 신규 서비스 시장",
+              "auto": "생성형 AI 업무 자동화 생산성 수작업 절감 기업 도입 사례",
+              "dev": "AI 코딩 도구 바이브 코딩 개발자 생산성 소프트웨어 개발 비용",
+          }
+
+
+          def main(focus: str, period: str, count: str, slot: str) -> dict:
+              kst = datetime.now(timezone(timedelta(hours=9)))
+              day = (slot or "").strip()[:10]
+              if not re.match(r"^\d{4}-\d{2}-\d{2}$", day):
+                  day = kst.strftime("%Y-%m-%d")
+              p = (period or "").strip().lower()
+              p = p if re.match(r"^\d{1,3}d$", p) else "30d"
+              try:
+                  n = max(3, min(int(str(count or "12").strip()), 20))
+              except ValueError:
+                  n = 12
+              f = (focus or "").strip()
+              out = {"today": day, "period_used": p, "count": str(n), "focus_used": f or "전체"}
+              for key, q in QUERIES.items():
+                  body = {"knowledge_id": f"all:{p}", "query": f"{f} {q}".strip(),
+                          "retrieval_setting": {"top_k": min(20, n), "score_threshold": 0}}
+                  out["body_" + key] = json.dumps(body, ensure_ascii=False)
+              return out
+        code_language: python3
+        desc: 작성일(KST)·기간·자료 수를 정하고 RAG 검색 요청 3개를 만든다
+        outputs:
+          body_startup:
+            children: null
+            type: string
+          body_auto:
+            children: null
+            type: string
+          body_dev:
+            children: null
+            type: string
+          today:
+            children: null
+            type: string
+          period_used:
+            children: null
+            type: string
+          count:
+            children: null
+            type: string
+          focus_used:
+            children: null
+            type: string
+        selected: false
+        title: 검색 요청 만들기
+        type: code
+        variables:
+        - value_selector:
+          - start
+          - focus
+          variable: focus
+        - value_selector:
+          - start
+          - period
+          variable: period
+        - value_selector:
+          - start
+          - count
+          variable: count
+        - value_selector:
+          - start
+          - slot
+          variable: slot
+      height: 90
+      id: build
+      position:
+        x: 380
+        y: 280
+      positionAbsolute:
+        x: 380
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config:
+            api_key: '{{#env.rag_api_key#}}'
+            header: ''
+            type: bearer
+          type: api-key
+        body:
+          data:
+          - type: text
+            value: '{{#build.body_startup#}}'
+          type: json
+        desc: 우리 RAG(뉴스·YouTube·리포트) — AI 창업·투자
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 1000
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 60
+          max_write_timeout: 10
+        title: 자료 찾기 · AI 창업·투자
+        type: http-request
+        url: http://rag-service.bbb-namespace.svc.cluster.local:8019/dify/retrieval
+        variables: []
+        error_strategy: default-value
+        default_value:
+        - key: body
+          type: string
+          value: ''
+        - key: status_code
+          type: number
+          value: 0
+        - key: headers
+          type: object
+          value: {}
+      height: 90
+      id: s_startup
+      position:
+        x: 680
+        y: 100
+      positionAbsolute:
+        x: 680
+        y: 100
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config:
+            api_key: '{{#env.rag_api_key#}}'
+            header: ''
+            type: bearer
+          type: api-key
+        body:
+          data:
+          - type: text
+            value: '{{#build.body_auto#}}'
+          type: json
+        desc: 우리 RAG — 업무 자동화·생산성
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 1000
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 60
+          max_write_timeout: 10
+        title: 자료 찾기 · 업무 자동화
+        type: http-request
+        url: http://rag-service.bbb-namespace.svc.cluster.local:8019/dify/retrieval
+        variables: []
+        error_strategy: default-value
+        default_value:
+        - key: body
+          type: string
+          value: ''
+        - key: status_code
+          type: number
+          value: 0
+        - key: headers
+          type: object
+          value: {}
+      height: 90
+      id: s_auto
+      position:
+        x: 680
+        y: 280
+      positionAbsolute:
+        x: 680
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config:
+            api_key: '{{#env.rag_api_key#}}'
+            header: ''
+            type: bearer
+          type: api-key
+        body:
+          data:
+          - type: text
+            value: '{{#build.body_dev#}}'
+          type: json
+        desc: 우리 RAG — AI 개발 도구·개발 민주화
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 1000
+        selected: false
+        ssl_verify: false
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 60
+          max_write_timeout: 10
+        title: 자료 찾기 · AI 개발 도구
+        type: http-request
+        url: http://rag-service.bbb-namespace.svc.cluster.local:8019/dify/retrieval
+        variables: []
+        error_strategy: default-value
+        default_value:
+        - key: body
+          type: string
+          value: ''
+        - key: status_code
+          type: number
+          value: 0
+        - key: headers
+          type: object
+          value: {}
+      height: 90
+      id: s_dev
+      position:
+        x: 680
+        y: 460
+      positionAbsolute:
+        x: 680
+        y: 460
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+
+          LABEL = {"startup": "AI 창업·투자", "auto": "업무 자동화", "dev": "AI 개발 도구"}
+          KIND = {"news": "뉴스", "youtube": "YouTube", "report": "리포트"}
+
+
+          def main(b_startup: str, st_startup: int, b_auto: str, st_auto: int, b_dev: str, st_dev: int, count: str) -> dict:
+              # 세 갈래 결과를 합쳐 같은 글(주소·제목)은 한 번만, 점수 높은 순으로 count 건. 번호 = [자료N]
+              seen, rows, tally = set(), [], []
+              for key, body, st in (("startup", b_startup, st_startup), ("auto", b_auto, st_auto), ("dev", b_dev, st_dev)):
+                  try:
+                      recs = (json.loads(body or "{}") or {}).get("records") or []
+                  except ValueError:
+                      recs = []
+                  tally.append(f"{LABEL[key]} {len(recs)}건" + ("" if st == 200 else f"(실패 HTTP {st})"))
+                  for r in recs:
+                      m = r.get("metadata") or {}
+                      k = m.get("url") or r.get("title") or ""
+                      if not k or k in seen:
+                          continue
+                      seen.add(k)
+                      rows.append((float(r.get("score") or 0), key, r, m))
+              rows.sort(key=lambda x: -x[0])
+              try:
+                  n = int(count or "12")
+              except ValueError:
+                  n = 12
+              rows = rows[:n]
+              text, sources = [], []
+              for i, (_, key, r, m) in enumerate(rows, 1):
+                  date = (m.get("published_at") or "")[:10] or "날짜 모름"
+                  kind = KIND.get(m.get("source") or "", m.get("source") or "자료")
+                  ch = m.get("channel") or ""
+                  title = (r.get("title") or "").strip()[:120]
+                  text.append(f"[자료{i}] ({kind}{' · ' + ch if ch else ''} · 게시일 {date} · {LABEL[key]}) {title}\n"
+                              + (r.get("content") or "").strip()[:700])
+                  sources.append({"n": i, "title": title, "url": m.get("url") or "", "date": date, "kind": kind, "channel": ch})
+              return {"materials": "\n\n".join(text) or "(근거 자료 없음 — 모든 통계·시장 수치는 '확인 필요'로 표시할 것)",
+                      "sources": json.dumps(sources, ensure_ascii=False),
+                      "tally": f"근거 자료 {len(rows)}건 사용 (" + ", ".join(tally) + ")"}
+        code_language: python3
+        desc: 세 갈래 결과를 합쳐 중복을 빼고 [자료N] 번호·게시일을 붙인다(LLM 이 출처를 밝히게)
+        outputs:
+          materials:
+            children: null
+            type: string
+          sources:
+            children: null
+            type: string
+          tally:
+            children: null
+            type: string
+        selected: false
+        title: 근거 자료 정리
+        type: code
+        variables:
+        - value_selector:
+          - s_startup
+          - body
+          variable: b_startup
+        - value_selector:
+          - s_startup
+          - status_code
+          variable: st_startup
+        - value_selector:
+          - s_auto
+          - body
+          variable: b_auto
+        - value_selector:
+          - s_auto
+          - status_code
+          variable: st_auto
+        - value_selector:
+          - s_dev
+          - body
+          variable: b_dev
+        - value_selector:
+          - s_dev
+          - status_code
+          variable: st_dev
+        - value_selector:
+          - build
+          - count
+          variable: count
+      height: 90
+      id: gather
+      position:
+        x: 980
+        y: 280
+      positionAbsolute:
+        x: 980
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 사용자 시스템 프롬프트 그대로 + 근거 규칙(자료에 없는 숫자는 '확인 필요')
+        model:
+          completion_params:
+            max_tokens: 3000
+            temperature: 0.4
+          mode: chat
+          name: gemma-4-E4B-it-MLX-8bit
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: sys-prompt
+          role: system
+          text: |-
+            # Role
+            당신은 15년 경력의 벤처 빌더(Venture Builder)이자 스타트업 전략 기획 수석 애널리스트입니다. 스타트업 CEO가 즉시 의사결정을 내릴 수 있도록, AI 기술 변화를 반영한 신규 창업 아이템 및 사업 전략을 500글자 분량의 두괄식 One-Page 보고서로 작성합니다.
+
+            # Core Context & Philosophy (기본 전제 및 핵심 관점)
+            모든 보고서를 작성할 때 아래의 핵심 철학과 목적을 반드시 관통시켜야 합니다.
+            * Subject (핵심 철학): AI로 인해 누구나 앱이나 소프트웨어를 개발할 수 있는 세상이 된 만큼, 단순 기능 구현이라는 기존의 한계를 넘어 "무엇을 새로 창조할 것인가(What to Create)"를 고민하는 능동적이고 창의적인 태도가 스타트업 생존의 핵심입니다.
+            * Why (작성 목적): AI를 통해 극한의 생산성(초소형 팀, 초고속 MVP, 수작업 자동화)을 달성할 수 있는 스타트업이 개발하기에 가장 유망한 창업 아이템과 사업 모델을 도출합니다.
+            * Who (독자 타겟): 의사결정권자인 스타트업 CEO를 대상으로 하므로, 기술적 디테일보다는 시장 기회, 차별화 해자(Moat), 수익성, 실행 속도에 초점을 맞춥니다.
+
+            # Formatting & Writing Rules (출력 및 작성 절대 원칙)
+            1. 두괄식 핵심 요약 (BLUF): 보고서 최상단에 핵심 결론, 추천 아이템, 기대효과를 3줄 이내로 먼저 제시합니다.
+            2. 500글자 분량 엄수: 미사여구, 인사말, 추상적 서론을 제거하고 개조식으로 전체 분량을 약 500글자 최대 1000자 내외 고밀도로 압축합니다.
+            3. As-Is vs To-Be 비교 테이블: 기존 시장의 한계(As-Is)와 AI 기반 신규 창업 모델(To-Be)의 차이를 반드시 표(Table)로 대비시킵니다.
+            4. 기승전결 구조: [핵심 요약] → [추진 배경 및 시장 한계(As-Is)] → [창업 아이템 및 전환 모델(To-Be)] → [기대효과 및 리스크 대응] → [실행 로드맵 및 출처] 순서를 유지합니다.
+            5. 문체 및 출처: 개조식의 간결한 개조식(~함, ~임, ~필요)을 사용하며, 통계나 시장 동향 언급 시 출처와 기준 시점을 명시합니다. 서론("알겠습니다")과 결론 인사("감사합니다")는 절대 출력하지 않습니다.
+
+            # Grounding Rules (근거 규칙 — 워크플로가 덧붙임)
+            * 아래 <자료> 는 우리 뉴스·YouTube·리포트 색인에서 찾은 근거다. 통계·금액·비율·기업 사례는 <자료> 에 있는 것만 쓰고, 문장 끝에 [자료N] 과 게시일을 붙인다(예: "… 증가함 [자료3, 2026-11-20]").
+            * <자료> 에 없는 숫자·사례는 지어내지 않는다. 꼭 필요하면 "(확인 필요)"를 붙인다.
+            * 추천 아이템은 <자료> 의 변화에서 이끌어 낸 가설이다. 근거가 약하면 아이템 끝에 "(가설)"을 붙인다.
+            * 작성일은 {{#build.today#}} 으로 쓴다. 관심 분야: {{#build.focus_used#}} (전체가 아니면 그 분야 위주로 Top 3 를 고른다).
+            * 표는 아래 틀의 4열(구분·As-Is·To-Be·Moat)과 3행을 유지하되, 칸 내용은 <자료> 와 관심 분야에 맞게 고쳐 써도 된다.
+            * "참고 및 출처:" 줄에는 본문에서 인용한 [자료N] 번호만 쉼표로 적는다(제목·주소는 뒤에 자동으로 붙는다). 인용이 없으면 "확인 필요"라고 적는다.
+            * 아래 틀만 출력한다.
+
+            # Output Template (출력 양식)
+            ---
+            # [보고서 제목: AI 시대 스타트업 신규 창업 아이템 및 실행 전략]
+            작성일: YYYY-MM-DD | 보고 대상: 스타트업 CEO | 핵심 테마: AI 기반 창조적 파괴 및 생산성 혁신
+
+            > [핵심 요약 (Executive Summary)]
+             -핵심 관점: (개발 장벽 소멸에 따른 능동적 창조 태도 및 기획 방향 1문장)
+             -추천 아이템: (AI로 생산성을 극대화할 수 있는 핵심 창업 아이템 요약 1문장)
+             -기대 성과: (초기 투입 자원 절감 및 비즈니스 기대효과 1문장)
+
+            ### 1. 시장 변화 및 기존 접근의 한계 (As-Is)
+            * 개발 민주화 트리거: (AI 코딩 대중화로 누구나 소프트웨어를 만드는 환경 변화 요약)
+            * 기존 창업의 병목: (단순 기능 위주 SaaS·앱이 갖는 모방 리스크 및 한계점)
+
+            ### 2. 신규 창업 아이템 및 전환 전략 (As-Is vs To-Be)
+            | 구분 | 기존 스타트업 접근 (As-Is) | AI 시대 신규 창업 모델 (To-Be) | 핵심 경쟁우위 (Moat) |
+            |---|---|---|---|
+            | 기획 관점 | 어떻게 만들 것인가 (구현 중심) | 무엇을 새로 창조할 것인가 (문제 정의) | 도메인 특화 워크플로우 |
+            | 제품 구조 | 수동 입력형 범용 소프트웨어 | 업무 완결형 자율 AI 에이전트 | 데이터·프로세스 내재화 |
+            | 개발·운영 | 대규모 인력 및 장기 개발 | 소수 정예 초고속 MVP 및 자동화 | 압도적 생산성 및 실행 속도 |
+
+            * 유망 창업 아이템 제안 (Top 3):
+              1. [아이템명 1]: (타겟 고객, 해결하는 문제, AI 활용 생산성 포인트)
+              2. [아이템명 2]: (타겟 고객, 해결하는 문제, AI 활용 생산성 포인트)
+              3. [아이템명 3]: (타겟 고객, 해결하는 문제, AI 활용 생산성 포인트)
+
+            ### 3. 기대효과 및 리스크 관리
+            * 기대효과: (개발·운영 비용 절감, 시장 진입 속도, 수익화 가능성)
+            * 핵심 리스크 및 대응: (빅테크 모방 또는 AI 오류 리스크에 대한 구체적 방어 전략)
+
+            ### 4. 향후 추진 일정 (Action Plan)
+            * 1단계 (W+1 ~ W+2): (문제 검증 및 타겟 고객 인터뷰)
+            * 2단계 (W+3 ~ W+4): (AI 기반 초고속 MVP 개발 및 파일럿 테스트)
+            * 3단계 (W+5 이후): (시장 피드백 반영 및 유료화 확장)
+
+            ---
+            참고 및 출처: (관련 시장 데이터, 벤처 투자 트렌드 또는 내부 기획 자료 및 기준 연도 표기)
+
+            {{#gather.tally#}}
+
+            <자료>
+            {{#gather.materials#}}
+            </자료>
+        - id: user-prompt
+          role: user
+          text: '{{#build.today#}} 기준 AI Native 생산성 제품 창조 보고서 작성 (관심 분야: {{#build.focus_used#}})'
+        selected: false
+        title: One-Page 보고서(LLM)
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 90
+      id: llm
+      position:
+        x: 1280
+        y: 280
+      positionAbsolute:
+        x: 1280
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import json
+          import re
+
+
+          def main(text: str, sources: str, tally: str) -> dict:
+              # 생각(think) 블록을 빼고, LLM 이 쓴 "참고 및 출처" 줄은 떼어 실제 인용한 [자료N] 만 제목·게시일·주소로 다시 쓴다.
+              body = re.sub(r"<think>.*?</think>", "", text or "", flags=re.S).strip()
+              try:
+                  src = {s["n"]: s for s in json.loads(sources or "[]")}
+              except (ValueError, KeyError, TypeError):
+                  src = {}
+              m = re.search(r"^\s*참고\s*및\s*출처\s*[:：].*\Z", body, flags=re.M | re.S)
+              if m:
+                  body = body[:m.start()].rstrip()
+              cited = sorted({int(x) for g in re.findall(r"\[\s*자료\s*([\d,\s자료]+)", body)
+                              for x in re.findall(r"\d+", g) if int(x) in src})
+              lines = []
+              for n in cited:
+                  s = src[n]
+                  where = " · ".join(x for x in (s.get("kind"), s.get("channel"), s.get("date")) if x)
+                  t = s.get("title") or "자료"
+                  lines.append(f"- [자료{n}] {where} · " + (f"[{t}]({s['url']})" if (s.get("url") or "").startswith("http") else t))
+              tail = "참고 및 출처:\n" + ("\n".join(lines) if lines else "- 확인 필요 (본문에 인용한 근거 자료 없음)")
+              # 분량 점검: 표 줄·머리글·구분선을 뺀 본문 글자 수(공백 제외). 1000자를 넘으면 표시만 한다
+              plain = "".join(l for l in body.splitlines() if not l.lstrip().startswith(("|", "#", "---", "작성일")))
+              size = len(re.sub(r"\s", "", plain))
+              warn = f"\n\n> ⚠️ 본문 {size}자 — 목표 500~1000자 초과" if size > 1000 else ""
+              out = f"{body}{warn}\n\n{tail}"
+              return {"result": f"{out}\n\n<!-- ai-native-meta chars={size} cited={len(cited)} {tally} -->", "chars": str(size)}
+        code_language: python3
+        desc: 출처를 실제 인용한 자료로 다시 쓰고(없으면 '확인 필요'), 분량을 잰다
+        outputs:
+          result:
+            children: null
+            type: string
+          chars:
+            children: null
+            type: string
+        selected: false
+        title: 결과 정리
+        type: code
+        variables:
+        - value_selector:
+          - llm
+          - text
+          variable: text
+        - value_selector:
+          - gather
+          - sources
+          variable: sources
+        - value_selector:
+          - gather
+          - tally
+          variable: tally
+      height: 90
+      id: finish
+      position:
+        x: 1580
+        y: 280
+      positionAbsolute:
+        x: 1580
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          import html
+          import json
+          import re
+
+          LIMIT = 3800   # 텔레그램 한 번에 4096자까지
+
+
+          def inline(t):
+              out, pos = [], 0
+              for m in re.finditer(r"\[([^\[\]]+)\]\((https?://[^)\s]+)\)", t):
+                  out.append(html.escape(t[pos:m.start()]))
+                  out.append(f'<a href="{html.escape(m.group(2), quote=True)}">{html.escape(m.group(1))}</a>')
+                  pos = m.end()
+              out.append(html.escape(t[pos:]))
+              return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", "".join(out))
+
+
+          def main(report: str, chat_id: str) -> dict:
+              body = re.sub(r"<!--.*?-->", "", report or "", flags=re.S).strip()
+              lines, size = [], 0
+              for raw in body.splitlines():
+                  t = raw.rstrip()
+                  if re.match(r"^\s*\|?\s*:?-{3,}", t) or t.strip() == "---":
+                      continue
+                  if t.lstrip().startswith("|"):
+                      cells = [c.strip() for c in t.strip().strip("|").split("|")]
+                      h = "• " + " · ".join(inline(c) for c in cells if c)
+                  elif re.match(r"^#{1,6}\s", t):
+                      h = "\n<b>" + inline(re.sub(r"^#{1,6}\s*", "", t)) + "</b>"
+                  elif t.lstrip().startswith(">"):
+                      h = "<i>" + inline(t.lstrip("> ").strip()) + "</i>"
+                  elif re.match(r"^\s*[-*]\s*\S", t):
+                      h = ("  " if t[:1].isspace() else "") + "• " + inline(re.sub(r"^\s*[-*]\s*", "", t))
+                  else:
+                      h = inline(t)
+                  if size + len(h) + 1 > LIMIT:
+                      lines.append("… 전체는 Dify 실행 기록")
+                      break
+                  lines.append(h)
+                  size += len(h) + 1
+              text = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip() or "(보고서 없음)"
+              return {"body": json.dumps({"chat_id": (chat_id or "").strip(), "text": text, "parse_mode": "HTML",
+                                          "disable_web_page_preview": True}, ensure_ascii=False)}
+        code_language: python3
+        desc: 보고서를 텔레그램 글(HTML)로. 표는 한 줄씩 '•' 로 바꾼다
+        outputs:
+          body:
+            children: null
+            type: string
+        selected: false
+        title: 텔레그램 글 만들기
+        type: code
+        variables:
+        - value_selector:
+          - finish
+          - result
+          variable: report
+        - value_selector:
+          - env
+          - telegram_chat_id
+          variable: chat_id
+      height: 90
+      id: tg
+      position:
+        x: 1880
+        y: 280
+      positionAbsolute:
+        x: 1880
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config: null
+          type: no-auth
+        body:
+          data:
+          - type: text
+            value: '{{#tg.body#}}'
+          type: json
+        desc: 봇 토큰·채팅방 = 환경 변수(Secret bbb-namespace/news-telegram). 실패해도 보고서는 그대로 나온다
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 2000
+        selected: false
+        ssl_verify: true
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 30
+          max_write_timeout: 30
+        title: 텔레그램 보내기
+        type: http-request
+        url: https://api.telegram.org/bot{{#env.telegram_bot_token#}}/sendMessage
+        variables: []
+        error_strategy: default-value
+        default_value:
+        - key: body
+          type: string
+          value: ''
+        - key: status_code
+          type: number
+          value: 0
+        - key: headers
+          type: object
+          value: {}
+      height: 90
+      id: send
+      position:
+        x: 2180
+        y: 280
+      positionAbsolute:
+        x: 2180
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 보고서 한 칸만 내보낸다(Dify 화면에 글로 보임). 나중에 저장·화면을 붙이면 이 칸을 받는다
+        outputs:
+        - value_selector:
+          - finish
+          - result
+          variable: report
+        - value_selector:
+          - finish
+          - chars
+          variable: chars
+        selected: false
+        title: 끝
+        type: end
+      height: 90
+      id: end
+      position:
+        x: 2480
+        y: 280
+      positionAbsolute:
+        x: 2480
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.6
