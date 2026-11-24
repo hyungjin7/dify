@@ -205,6 +205,10 @@ workflow:
                   bi = random.randrange(66)   # 비우면 랜덤: 책을 고르고, 장·절은 원본을 받은 뒤 고른다
                   return {"ok": 1, "book_index": bi, "book": NAMES[bi][0], "chapter": 0, "verse": 0,
                           "url": BASE + quote(NAMES[bi][0] + ".json"), "error": ""}
+              if s in LOOKUP:   # 책 이름만 쓰면 1장 1절
+                  bi = LOOKUP[s]
+                  return {"ok": 1, "book_index": bi, "book": NAMES[bi][0], "chapter": 1, "verse": 1,
+                          "url": BASE + quote(NAMES[bi][0] + ".json"), "error": ""}
               m = REF.match(s)
               bi = LOOKUP.get(m.group(1).strip()) if m else None
               if bi is None:
