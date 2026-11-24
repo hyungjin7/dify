@@ -13,6 +13,7 @@ kubectl 되는 곳(맥북)에서:
   SAVE_APP_KEY=docs-answer-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/docs-answer-workflow.yml "서브넷이 필요한 이유"  # ccc 골라 묻기
   SAVE_APP_KEY=startup-collect-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/startup-collect-workflow.yml  # 신규 창업아이템 ① 자료 수집(7·8·13·14시)
   SAVE_APP_KEY=startup-report-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/startup-report-workflow.yml  # 신규 창업아이템 ③ 보고서(9·15시)
+  ENV_FILE=~/projects/easybible/.env.local INPUTS='{"reference":"요한복음 3:16","verse_text":"…"}' python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/bible-study-workflow.yml  # 말씀 스와이프 구절 공부(키를 .env.local 에)
 
 하는 일(다시 돌려도 같은 이름 앱을 덮어쓴다):
   1) DSL 이 rag_api_key·news_api_key·telegram_*·startup_telegram_* 을 쓰면 그 값(Secret bbb-namespace/rag-dify-key·news-dify-key·news-telegram·startup-telegram)을 kubectl 로 읽어 넣는다
@@ -230,6 +231,19 @@ if save_as:
     if svc:
         subprocess.run(["kubectl", "-n", "bbb-namespace", "rollout", "restart", f"deploy/{svc}"], check=True, capture_output=True)
     print(f"    → 앱 키를 Secret bbb-namespace/{save_as} 에 저장" + (f"하고 {svc} 를 다시 띄웠습니다" if svc else ""))
+
+# 6-2) 앱 키를 이 컴퓨터의 .env 파일에 넣기(ENV_FILE=<경로>, 예: 말씀 스와이프 앱 easybible/.env.local).
+#      DIFY_API_URL·DIFY_API_KEY 두 줄만 바꾸고 나머지 줄은 그대로 둔다. 키는 화면에 찍지 않는다.
+env_file = os.path.expanduser(os.getenv("ENV_FILE", "").strip())
+if env_file:
+    want = {"DIFY_API_URL": f"{BASE}/v1", "DIFY_API_KEY": tok}
+    lines = open(env_file, encoding="utf-8").read().splitlines() if os.path.exists(env_file) else []
+    lines = [l for l in lines if l.split("=", 1)[0].strip() not in want]
+    lines += [f"{k}={v}" for k, v in want.items()]
+    with open(env_file, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    os.chmod(env_file, 0o600)
+    print(f"    → 앱 키를 {env_file} 에 저장(DIFY_API_URL·DIFY_API_KEY)")
 
 # 7) 시험 실행 — 이름표는 실제로 하는 일로 보인다(질문을 보내는 앱만 "질문: …")
 RUN_LABELS = {"news-dify-app": "지금 시각 요약 한 번(news 를 통해)", "news-dify-collect-app": "지금 한 번 뉴스 수집(news 를 통해)",
