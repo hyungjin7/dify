@@ -85,6 +85,8 @@ def step(n, msg):
 
 # 1) DSL 이 쓰는 bbb 창구 키(환경 변수 이름 → Secret). 있는 것만 kubectl 로 읽는다.
 SECRET_OF = {"rag_api_key": "rag-dify-key", "news_api_key": "news-dify-key",
+             # agent Dify 창구(/dify/llm/template: Prompt Templates 로 LLM 부르기, 준비: samples/ai-native-product-report.md)
+             "agent_api_key": "agent-dify-key",
              # 텔레그램(준비: samples/telegram_setup.py) — Secret 이름:칸 이름
              "telegram_bot_token": "news-telegram:token", "telegram_chat_id": "news-telegram:chat_id"}
 step(1, "bbb 창구 키 읽기(kubectl, DSL 이 쓰는 것만)")
@@ -101,7 +103,9 @@ for var, sec in SECRET_OF.items():
         env_keys[var] = base64.b64decode(key).decode()
         print(f"    → {var} ← Secret {sec}")
     except Exception as e:  # noqa: BLE001
-        hint = "python3 deploy/k3s/samples/telegram_setup.py" if var.startswith("telegram") else "python3 deploy/k3s/provision.py --apply"
+        hint = ("python3 deploy/k3s/samples/telegram_setup.py" if var.startswith("telegram") else
+                "deploy/k3s/samples/ai-native-product-report.md 의 '준비' 명령" if var == "agent_api_key" else
+                "python3 deploy/k3s/provision.py --apply")
         need(False, f"{sec} 를 못 읽었습니다. 먼저 {hint}", str(e))
 if not env_keys:
     print("    → 필요 없음")
