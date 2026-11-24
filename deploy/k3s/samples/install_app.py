@@ -13,7 +13,7 @@ kubectl 되는 곳(맥북)에서:
   SAVE_APP_KEY=docs-answer-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/docs-answer-workflow.yml "서브넷이 필요한 이유"  # ccc 골라 묻기
   SAVE_APP_KEY=startup-collect-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/startup-collect-workflow.yml  # 신규 창업아이템 ① 자료 수집(7·8·13·14시)
   SAVE_APP_KEY=startup-report-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/startup-report-workflow.yml  # 신규 창업아이템 ③ 보고서(9·15시)
-  ENV_FILE=~/projects/easybible/.env.local INPUTS='{"reference":"요한복음 3:16","verse_text":"…"}' python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/bible-study-workflow.yml  # 말씀 스와이프 구절 공부(키를 .env.local 에)
+  SAVE_APP_KEY=easybible-dify-app ENV_FILE=~/projects/easybible/.env.local INPUTS='{"reference":"창세기 1장 1절"}' python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/bible-study-workflow.yml  # 말씀 스와이프 구절 공부(주소만, 비우면 랜덤)
 
 하는 일(다시 돌려도 같은 이름 앱을 덮어쓴다):
   1) DSL 이 rag_api_key·news_api_key·telegram_*·startup_telegram_* 을 쓰면 그 값(Secret bbb-namespace/rag-dify-key·news-dify-key·news-telegram·startup-telegram)을 kubectl 로 읽어 넣는다
