@@ -15,6 +15,7 @@ kubectl 되는 곳(맥북)에서:
      TELEGRAM_SECRET=startup-telegram python3 deploy/k3s/samples/telegram_setup.py  # 신규 창업 보고서 채널
      - 토큰: 새 Secret 이면 news-telegram 의 토큰을 다시 쓸지 묻는다. 아니면 화면에 안 보이게 묻는다
        (TELEGRAM_BOT_TOKEN 환경 변수로 줘도 된다)
+     - 이 컴퓨터에서 텔레그램이 막히면 자동으로 클러스터 Pod(deploy/dworker)에서 대신 부른다(TELEGRAM_VIA_CLUSTER=1 로 처음부터)
      - 받을 방: 봇이 받은 최근 글에서 찾는다. 여러 개면 고른다(TELEGRAM_CHAT_ID 로 직접 줘도 된다. 채널은 -100 으로 시작)
   3) 시험 글을 보내고, 받았으면 Secret 저장
   4) 그다음 install_app.py 로 앱을 다시 올리면 워크플로 끝에서 그 방으로 보낸다
@@ -34,18 +35,45 @@ LABEL = {"news-telegram": "버핏 뉴스 요약", "startup-telegram": "신규 �
 REUSE_FROM = "news-telegram"
 
 
-def tg(token, method, payload=None):
-    req = urllib.request.Request(f"https://api.telegram.org/bot{token}/{method}",
-                                 data=json.dumps(payload).encode() if payload is not None else None,
-                                 headers={"Content-Type": "application/json"})
+# 이 컴퓨터에서 api.telegram.org 가 막히거나 느리면(2026-11-24 실측: 읽기 시간 초과) 클러스터 안 Pod 에서 대신 부른다.
+# 클러스터는 Dify·news 가 이미 텔레그램으로 보내고 있어 닿는다. 토큰은 명령줄이 아니라 표준 입력으로 넘긴다.
+RELAY = (os.getenv("TELEGRAM_RELAY_DEPLOY") or "deploy/dworker").strip()
+_RELAY_CODE = ("import json,sys,urllib.request,urllib.error\n"
+               "a=json.load(sys.stdin)\n"
+               "r=urllib.request.Request(a['url'],data=a['data'].encode() if a['data'] else None,"
+               "headers={'Content-Type':'application/json'})\n"
+               "try:\n  print(urllib.request.urlopen(r,timeout=30).read().decode())\n"
+               "except urllib.error.HTTPError as e:\n  print(e.read().decode() or json.dumps({'ok':False,'description':'HTTP %s'%e.code}))\n")
+_use_relay = os.getenv("TELEGRAM_VIA_CLUSTER", "").strip() == "1"
+
+
+def _relay(url, data):
+    out = subprocess.run(["kubectl", "-n", "bbb-namespace", "exec", "-i", RELAY, "--", "python", "-c", _RELAY_CODE],
+                         input=json.dumps({"url": url, "data": data}), capture_output=True, text=True, timeout=90)
     try:
-        with urllib.request.urlopen(req, timeout=20) as r:
-            return json.load(r)
-    except urllib.error.HTTPError as e:  # 텔레그램은 실패도 JSON 으로 알려 준다
+        return json.loads(out.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return {"ok": False, "description": f"클러스터 경유 실패: {(out.stderr or out.stdout)[-300:]}"}
+
+
+def tg(token, method, payload=None):
+    global _use_relay
+    url = f"https://api.telegram.org/bot{token}/{method}"
+    data = json.dumps(payload) if payload is not None else ""
+    if not _use_relay:
+        req = urllib.request.Request(url, data=data.encode() if data else None, headers={"Content-Type": "application/json"})
         try:
-            return json.load(e)
-        except Exception:  # noqa: BLE001
-            return {"ok": False, "description": f"HTTP {e.code}"}
+            with urllib.request.urlopen(req, timeout=15) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as e:  # 텔레그램은 실패도 JSON 으로 알려 준다
+            try:
+                return json.load(e)
+            except Exception:  # noqa: BLE001
+                return {"ok": False, "description": f"HTTP {e.code}"}
+        except (OSError, TimeoutError) as e:   # 연결 안 됨·시간 초과 → 이후는 클러스터로
+            print(f"    → 이 컴퓨터에서 텔레그램 연결 실패({type(e).__name__}), 클러스터({RELAY})에서 대신 부릅니다")
+            _use_relay = True
+    return _relay(url, data)
 
 
 def secret_value(name, field):
