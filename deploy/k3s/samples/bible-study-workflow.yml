@@ -1,12 +1,13 @@
-# 말씀 스와이프(easybible) 구절 공부 v2 (2026-11-24 사용자 요청, 같은 날 "주소만 넣으면 되게"·"비우면 랜덤").
-# 구절 주소 하나만 넣는다(창세기 1장 1절, 창 1:1, 요 3:16 / 비우면 랜덤). 본문은 AI 가 아니라
-#   원본 파일(github yuhwan/bible-krv 고정 커밋)에서 꺼내고 파일 지문(SHA-256)을 앱과 같은 값으로 확인한다.
-#   두 출처가 다른 절·자리표시 절은 쓰지 않는다. AI 는 설명 7가지(JSON 글자 text)만 쓴다.
-# 앱이 보내는 verse_text·context·translation 은 받아도 쓰지 않는다(본문은 항상 원본 파일).
-# 올리기: SAVE_APP_KEY=easybible-dify-app ENV_FILE=~/projects/easybible/.env.local \
+# 말씀 스와이프(easybible) 구절 공부 v3 (2026-11-24 사용자 결정: "본문=앱, 관련 구절=Dify 지식").
+# 구절 주소 하나만 넣는다(창세기 1장 1절, 창 1:1, 요 3:16 / 비우면 랜덤).
+#   본문 = 우리 앱 https://bible.delvrio.com/api/verse (원본 대조를 통과한 절만, 원본 문자열 그대로). GitHub 를 부르지 않는다.
+#   관련 구절 후보 = Dify 지식 "성경 개역한글"(한 절 = 한 조각, bible_to_dify_knowledge.py 로 올림)에서 뜻으로 8개 찾기.
+#   AI 는 설명 7가지(JSON 글자 text)만 쓴다. 앱은 관련 구절 주소를 원본으로 다시 확인한다.
+# 앱이 보내는 verse_text·context·translation 은 받아도 쓰지 않는다(본문은 항상 앱 API).
+# 올리기(지식을 먼저 올린 뒤): SAVE_APP_KEY=easybible-dify-app SAVE_APP_KEY_NS=easybible \
 #   INPUTS='{"reference":"창세기 1장 1절"}' python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/bible-study-workflow.yml
 app:
-  description: 구절 주소만 넣으면(비우면 랜덤) 원본에서 구절을 꺼내 AI 가 설명한다
+  description: 구절 주소만 넣으면(비우면 랜덤) 앱에서 원본 구절을 받고, 성경 지식에서 비슷한 구절을 찾아 AI 가 설명한다
   icon: 📖
   icon_background: '#E0F2FE'
   mode: workflow
@@ -36,96 +37,76 @@ workflow:
       voice: ''
   graph:
     edges:
-    - id: start-source-parse
-      source: start
-      sourceHandle: 'source'
-      target: parse
-      targetHandle: target
-      type: custom
-      data:
+    - data:
         isInIteration: false
         sourceType: start
-        targetType: code
-    - id: parse-source-parse_ok
-      source: parse
+        targetType: http-request
+      id: start-source-fetch
+      source: start
       sourceHandle: 'source'
-      target: parse_ok
-      targetHandle: target
-      type: custom
-      data:
-        isInIteration: false
-        sourceType: code
-        targetType: if-else
-    - id: parse_ok-true-fetch
-      source: parse_ok
-      sourceHandle: 'true'
       target: fetch
       targetHandle: target
       type: custom
-      data:
+    - data:
         isInIteration: false
-        sourceType: if-else
-        targetType: http-request
-    - id: parse_ok-false-end_parse
-      source: parse_ok
-      sourceHandle: 'false'
-      target: end_parse
-      targetHandle: target
-      type: custom
-      data:
-        isInIteration: false
-        sourceType: if-else
-        targetType: end
-    - id: fetch-source-source
+        sourceType: http-request
+        targetType: code
+      id: fetch-source-source
       source: fetch
       sourceHandle: 'source'
       target: source
       targetHandle: target
       type: custom
-      data:
+    - data:
         isInIteration: false
-        sourceType: http-request
-        targetType: code
-    - id: source-source-source_ok
+        sourceType: code
+        targetType: if-else
+      id: source-source-source_ok
       source: source
       sourceHandle: 'source'
       target: source_ok
       targetHandle: target
       type: custom
-      data:
-        isInIteration: false
-        sourceType: code
-        targetType: if-else
-    - id: source_ok-true-llm
-      source: source_ok
-      sourceHandle: 'true'
-      target: llm
-      targetHandle: target
-      type: custom
-      data:
+    - data:
         isInIteration: false
         sourceType: if-else
-        targetType: llm
-    - id: source_ok-false-end_source
+        targetType: knowledge-retrieval
+      id: source_ok-true-kr
+      source: source_ok
+      sourceHandle: 'true'
+      target: kr
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: if-else
+        targetType: end
+      id: source_ok-false-end_source
       source: source_ok
       sourceHandle: 'false'
       target: end_source
       targetHandle: target
       type: custom
-      data:
+    - data:
         isInIteration: false
-        sourceType: if-else
+        sourceType: knowledge-retrieval
+        targetType: llm
+      id: kr-source-llm
+      source: kr
+      sourceHandle: 'source'
+      target: llm
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: llm
         targetType: end
-    - id: llm-source-end
+      id: llm-source-end
       source: llm
       sourceHandle: 'source'
       target: end
       targetHandle: target
       type: custom
-      data:
-        isInIteration: false
-        sourceType: llm
-        targetType: end
     nodes:
     - id: start
       type: custom
@@ -169,117 +150,13 @@ workflow:
           required: false
           type: text-input
           variable: translation
-    - id: parse
-      type: custom
-      position:
-        x: 380
-        y: 280
-      positionAbsolute:
-        x: 380
-        y: 280
-      sourcePosition: right
-      targetPosition: left
-      height: 54
-      width: 244
-      data:
-        type: code
-        title: 주소 읽기
-        desc: 창세기 1장 1절 → 책·장·절, 비우면 랜덤 책
-        selected: false
-        code_language: python3
-        code: |
-          import random
-          import re
-          from urllib.parse import quote
-
-          # 66권 [이름, 줄임말, 다른 이름…] (원본 books.json 순서)
-          NAMES = [["창세기", "창"], ["출애굽기", "출"], ["레위기", "레"], ["민수기", "민"], ["신명기", "신"], ["여호수아", "수"], ["사사기", "삿"], ["룻기", "룻"], ["사무엘상", "삼상"], ["사무엘하", "삼하"], ["열왕기상", "왕상"], ["열왕기하", "왕하"], ["역대상", "대상"], ["역대하", "대하"], ["에스라", "스"], ["느헤미야", "느"], ["에스더", "에"], ["욥기", "욥"], ["시편", "시"], ["잠언", "잠"], ["전도서", "전"], ["아가", "아"], ["이사야", "사"], ["예레미야", "렘"], ["예레미야애가", "애"], ["에스겔", "겔"], ["다니엘", "단"], ["호세아", "호"], ["요엘", "욜"], ["아모스", "암"], ["오바댜", "옵"], ["요나", "욘"], ["미가", "미"], ["나훔", "나"], ["하박국", "합"], ["스바냐", "습"], ["학개", "학"], ["스가랴", "슥"], ["말라기", "말"], ["마태복음", "마", "마태"], ["마가복음", "막", "마가"], ["누가복음", "눅", "누가"], ["요한복음", "요", "요한"], ["사도행전", "행"], ["로마서", "롬"], ["고린도전서", "고전"], ["고린도후서", "고후"], ["갈라디아서", "갈"], ["에베소서", "엡"], ["빌립보서", "빌"], ["골로새서", "골"], ["데살로니가전서", "살전"], ["데살로니가후서", "살후"], ["디모데전서", "딤전"], ["디모데후서", "딤후"], ["디도서", "딛"], ["빌레몬서", "몬"], ["히브리서", "히"], ["야고보서", "약"], ["베드로전서", "벧전"], ["베드로후서", "벧후"], ["요한1서", "요일", "요한일서"], ["요한2서", "요이", "요한이서"], ["요한3서", "요삼", "요한삼서"], ["유다서", "유"], ["요한계시록", "계", "계시록"]]
-          LOOKUP = {n: i for i, row in enumerate(NAMES) for n in row}
-          BASE = "https://raw.githubusercontent.com/yuhwan/bible-krv/ba0395f18d6c0113544ed62230a5e7cfacc44a6a/"
-          REF = re.compile(r"^(.+?)\s?(\d+)(?:\s?(?:장|편))?(?:\s?[:：.]\s?|\s)?(\d+)?(?:\s?절)?$")
-
-
-          def main(reference: str) -> dict:
-              s = re.sub(r"\s+", " ", (reference or "").strip())
-              if not s or s in ("랜덤", "아무거나", "random"):
-                  bi = random.randrange(66)   # 비우면 랜덤: 책을 고르고, 장·절은 원본을 받은 뒤 고른다
-                  return {"ok": 1, "book_index": bi, "book": NAMES[bi][0], "chapter": 0, "verse": 0,
-                          "url": BASE + quote(NAMES[bi][0] + ".json"), "error": ""}
-              if s in LOOKUP:   # 책 이름만 쓰면 1장 1절
-                  bi = LOOKUP[s]
-                  return {"ok": 1, "book_index": bi, "book": NAMES[bi][0], "chapter": 1, "verse": 1,
-                          "url": BASE + quote(NAMES[bi][0] + ".json"), "error": ""}
-              m = REF.match(s)
-              bi = LOOKUP.get(m.group(1).strip()) if m else None
-              if bi is None:
-                  return {"ok": 0, "book_index": -1, "book": "", "chapter": 0, "verse": 0, "url": "",
-                          "error": '{"error": "주소를 못 읽었어요. 예: 창세기 1장 1절, 창 1:1, 요한복음 3:16 (비우면 랜덤)"}'}
-              return {"ok": 1, "book_index": bi, "book": NAMES[bi][0], "chapter": int(m.group(2)),
-                      "verse": int(m.group(3) or 1), "url": BASE + quote(NAMES[bi][0] + ".json"), "error": ""}
-
-        variables:
-        - variable: reference
-          value_selector:
-          - start
-          - reference
-        outputs:
-          ok:
-            type: number
-            children: null
-          book_index:
-            type: number
-            children: null
-          book:
-            type: string
-            children: null
-          chapter:
-            type: number
-            children: null
-          verse:
-            type: number
-            children: null
-          url:
-            type: string
-            children: null
-          error:
-            type: string
-            children: null
-    - id: parse_ok
-      type: custom
-      position:
-        x: 680
-        y: 280
-      positionAbsolute:
-        x: 680
-        y: 280
-      sourcePosition: right
-      targetPosition: left
-      height: 126
-      width: 244
-      data:
-        type: if-else
-        title: 주소를 읽었나
-        desc: ''
-        selected: false
-        cases:
-        - case_id: 'true'
-          id: 'true'
-          logical_operator: and
-          conditions:
-          - id: c-parse_ok
-            comparison_operator: '='
-            value: '1'
-            varType: number
-            variable_selector:
-            - parse
-            - ok
     - id: fetch
       type: custom
       position:
-        x: 980
+        x: 380
         y: 280
       positionAbsolute:
-        x: 980
+        x: 380
         y: 280
       sourcePosition: right
       targetPosition: left
@@ -287,16 +164,16 @@ workflow:
       width: 244
       data:
         type: http-request
-        title: 원본 성경 파일 받기
-        desc: yuhwan/bible-krv 고정 커밋(바뀌지 않는 파일)
+        title: 앱에서 원본 구절 받기
+        desc: bible.delvrio.com/api/verse (원본 대조 통과한 절만)
         selected: false
         method: get
-        url: '{{#parse.url#}}'
+        url: https://bible.delvrio.com/api/verse
         authorization:
           type: no-auth
           config: null
         headers: ''
-        params: ''
+        params: 'ref:{{#start.reference#}}'
         body:
           type: none
           data: []
@@ -313,10 +190,10 @@ workflow:
     - id: source
       type: custom
       position:
-        x: 1280
+        x: 680
         y: 280
       positionAbsolute:
-        x: 1280
+        x: 680
         y: 280
       sourcePosition: right
       targetPosition: left
@@ -324,50 +201,22 @@ workflow:
       width: 244
       data:
         type: code
-        title: 원본에서 구절 꺼내기
-        desc: 파일 지문 확인 → 구절·앞뒤 2절(본문은 원본 그대로)
+        title: 받은 구절 읽기
+        desc: 앱 답(JSON)에서 주소·본문·앞뒤 문맥 꺼내기(본문은 그대로)
         selected: false
         code_language: python3
         code: |
-          import hashlib
           import json
-          import random
-          import re
-
-          # 원본 파일 지문(앱 data/sources/krv-yuhwan.sha256 과 같음). 다르면 쓰지 않는다.
-          SHA = {"창세기": "b197cdeeb13cf22eddb82461e0f8c8a596ee8b904d5f96fb62ffea58eb727319", "출애굽기": "24fe5fd9bfa269a4dff57e7aa7bf5be13ba63f3bbe8b1125b42546d08b69c779", "레위기": "3c17155c4864257090ba8472ac401a01f793b2025470dac48b0305d4189e6eba", "민수기": "20bfa425db5c9bf1dd101081c105084e620809d48e53813e36d68f73aea5b4c4", "신명기": "a2cf51bd05fbe79e170865d185a56100b2fa07d80dedb491780941a02d78df83", "여호수아": "b6cf85080bbbd66289c5b3154733ce1eef1105722686e4e60a8e9b8c09b88623", "사사기": "7fd862d42bf54db19944f3f22588fc6493476c34e6d5551f70d3351b14dcbb48", "룻기": "a7202fc57d6ab878c8cb5efc6a09a2fb46403bb0754b25ed5d265fb4bbb6db16", "사무엘상": "f6e499888b9a0971c7d57d3add8c714059ef50706e7de36f1a384f5518ac84a5", "사무엘하": "9425fcb30ae11c33ad14bb51f9f0ba87549e2b85a25b37f378dd225c2e13c007", "열왕기상": "c3f3605d9bfcefaf56d85342e98a9674e7b5b189e0bdca80bbf39004a9c2b3e3", "열왕기하": "df415da5bbc9c4650033da971b28751e72b58354e3ab9ee317640557cf04b0f5", "역대상": "a4e03f468f9df5478ae2c67190606428d64b4f5c265db9b9f82136594c18540e", "역대하": "32d96eb828ca6c78b773afa69d20ddf3f85d1e86fcc348d1f13f70628f8a5af3", "에스라": "949829f8472ec8fa3cbe078a20f1fad0b15dc983c5777fb75c0aa92abdb1d538", "느헤미야": "820fc142569331caa4e1c9417f079aa1e34cf2b72c22731f0524b56143802be4", "에스더": "7ba890a66f460188ec142af60f2170fe385f90de0ce5d8ffe7a13316669e2ad4", "욥기": "0429645a54b77c8de00cf1c3f3587443fe00a1e20442072214ba2d03e1eb51b2", "시편": "420d87f78fc36afde8ecadce3aaa21d1a4ff6a175a315d80edcb6bc51a4cc188", "잠언": "693bf9a264f08bede7a5a02ae7cdb682b887ad98788755a8323451d60c3c7ac9", "전도서": "23813c6919fe4d6ba2ed0ec3787789ae8df9ff02bba8fd0bb4e3f3459f333b06", "아가": "c762e5a832b53dbf0e42ee2bd4ba0c98e7e6ef1cbcb70b48c880b1b8c2d4bada", "이사야": "1fbd23469cc17150fa46ba2c9ab708dd5e0ae9120034b92a9d495617edc82c4c", "예레미야": "582d8ad87ddf91f473ba6fac2c06725d29afd9f393d3a95b43d2ad050e6e5f76", "예레미야애가": "8ea0830a36b0500bb3c6f30b0defd573666ce4f098056b52927dea41e4b7c8cc", "에스겔": "342ce056204db8823e50a8c6d29c5ff147a6c5224971c2a70e3acb2466ef5acf", "다니엘": "2f9d9505f9891e485cf0941e6ae1f2d302a1985d13fc0ac6b6260e589cb63f85", "호세아": "d2116f55f75e47930a716982961b3dff26cbe23f772f598ff0cc8b1d8079a83b", "요엘": "e47ed75d471e286fc31c052c65cee4aff6da99fa81cab28b58789da1460841aa", "아모스": "c767bb52433059c2f125cf13dc4c1862a8d3a810307898842f5a18398ef6a596", "오바댜": "0f94b6c200095afd7302ed0c2a599e3b10d2633e050da0a9f2620844f0fe8329", "요나": "9417ade3484dfae554a516c93878185005d921258aa8546a33669879a9d1aca6", "미가": "cc7f6ad2cf05a0eb597428385ff135e5e01042d67e78910cf213fc4a43d5c49a", "나훔": "3a8d7e65d8dc39c00958189c759680385f4a7101d23afdd36bc248da06de5ef3", "하박국": "6dd9e60968027f11370c2b3493fe3fd4fd3a8b235ef28436f30ce543238ff943", "스바냐": "db8b4d6463cace8c0d59f100b7cf2e1520edf6c2cfa0c5084a2e99b737a4aeb4", "학개": "348e5b5665f1f71a7f595d46ec95341eb4ccfcf241c69057e1c39f2e89eee25c", "스가랴": "b822db1ebab2ffb47be599ca622e259e09c669325dc78fe214f455c23f01ae6a", "말라기": "2f0791089af8593429da8fdf16f2a13a425000db59636b202383eb2bbea6e22a", "마태복음": "0d94fb391b6158b60cdf039e5a52fce7271eab33c8ff167a12b4a1768326bd45", "마가복음": "3accb49a5f52a9abb1d2747994bd0733fe48f2f3fd630d825af9b4dc738ff8d5", "누가복음": "c4f90be1a50b8242dc123827090e16d96889c1321fec1e97b0eb3eb145255219", "요한복음": "539ef3cf60fcdaa1dd5cd0a07cb2796eeee2dd5cb63250cb076ef401da81ba23", "사도행전": "454303d4e677a0c92385c520a0ff26efbacb7c2e00861ee11fc9815bf9f8579a", "로마서": "a147ac45be5019c36082a1e128e50e2f5d5b76815607b186f1657006805ab08d", "고린도전서": "acb001cc50b1c6f6c1734fb79feb61de3a5200d44a9b66a2d6af9ddd4aa208bf", "고린도후서": "ebb373507c2ea7b5ebf5f2ec72e3f643a79e2ac5589afd91644e3753f632dc71", "갈라디아서": "e368686ff5f5f8857721bb176c70e9bad3cb5a1bd1477d823a5456eb06afadee", "에베소서": "d9e029ba93cfa9b6fa1ca621524bca1b05d40c602249b95961b4aaf6922c9d78", "빌립보서": "e3464c7b50efb39e8c0f3076d30e350d44aca51f28cf1df4bc3da56a5c514ff7", "골로새서": "aab7a2c5feb9ffa0b77ae84db88f2fc01c658a894b3fa26c0570654dcb26376a", "데살로니가전서": "1f673438f3fd29f34e64dcfcb59f3a7ce989ad98845dbf935cf6595de8b853f4", "데살로니가후서": "fe822bb4605e52b90decfc3377a58706fa2db7282508e27dad134105f6e4225d", "디모데전서": "61e93090e645a873c66a1e8fd30fb595a05de85d3ea54b502961a605c562ec7b", "디모데후서": "4c0f56fa21ddfbac52b5b23e7c97735a269cb792b453cad2259e635a2af01179", "디도서": "0ad04df591fd8616011417b1fe2b5fc042d1d4281f6de47195cd91d5d90bd53c", "빌레몬서": "29704021777b5b55894c2e08f08363d9ffd42ea65619baaba2075c9b87b7e0ba", "히브리서": "02d639d92a41daccf25b4d722cfa23b15cad8ccd0e4f75cae90cad30e188a9b6", "야고보서": "7a461391aa865778b01caf5c5f8c5941d18d3f4f265addd5c49dc2187cd74385", "베드로전서": "88268716ab93b06e12465744e3570bae4fc4afb819f4cccf0ae99674a7e65839", "베드로후서": "8764f05aa33342603d7a8ab0ac8460da4c22e5f92d1e685f2bf21d0d010da09a", "요한1서": "aae20f3ba5852541d4abe44cc069bf32fcb4db4a71cd10e07bd8f4a32381302c", "요한2서": "35a2071efc9d04540ded6ee88e60b2b95f86c3714c464f3be3de959674f82b15", "요한3서": "99fe3be38a884a24c4136fa35ee35768fb32ad3790ebcdd0c193064c1ef0bff4", "유다서": "8fbff3da58edf5ee94f0e7783d8efb6da492515d30844f45d2bcfa00951939d5", "요한계시록": "41d2f2c96542b54e9e51e4b094c9ab771522b04e3453d1305b5b85b93225a8aa"}
-          # 두 출처(yuhwan·CrossWire)가 다른 절, 원본에만 있는 절: 보여 주지 않는다 (책번호|장|절)
-          DISPUTED = set(["0|19|22", "0|22|17", "0|22|4", "0|45|12", "11|23|25", "13|34|30", "13|9|23", "14|1|6", "14|4|23", "17|29|17", "17|38|15", "18|100|1", "18|105|6", "18|10|15", "18|121|7", "18|124|3", "18|128|1", "18|139|2", "18|16|11", "18|21|9", "18|22|1", "18|29|5", "18|33|1", "18|34|20", "18|3|7", "18|58|7", "18|72|19", "18|72|20", "18|8|4", "18|92|2", "18|92|3", "19|13|10", "19|1|27", "1|12|7", "1|13|13", "1|13|15", "1|20|19", "1|33|13", "1|36|24", "1|9|25", "20|3|11", "21|6|13", "21|6|14", "22|14|2", "22|30|2", "22|44|2", "22|45|2", "22|48|2", "22|59|19", "23|21|2", "23|49|35", "23|50|31", "25|24|5", "25|4|9", "2|27|14", "30|1|12", "31|2|2", "37|13|4", "39|11|11", "39|11|12", "39|14|2", "39|14|8", "39|16|14", "39|17|13", "39|18|11", "39|21|25", "39|28|19", "39|3|1", "39|3|11", "39|3|13", "39|3|14", "39|3|16", "39|3|6", "39|3|7", "39|6|28", "39|9|14", "3|10|30", "3|14|29", "3|24|8", "3|7|74", "3|9|12", "40|10|38", "40|10|39", "40|11|26", "40|11|30", "40|15|28", "40|16|16", "40|1|4", "40|1|41", "40|1|5", "40|1|8", "40|1|9", "40|6|14", "40|6|24", "40|6|25", "40|8|28", "40|9|44", "40|9|46", "41|12|50", "41|15|14", "41|15|16", "41|17|36", "41|1|32", "41|20|4", "41|23|17", "41|2|5", "41|3|12", "41|3|16", "41|3|21", "41|3|3", "41|3|7", "41|6|12", "41|7|20", "41|7|29", "41|7|30", "41|7|33", "41|9|19", "42|10|40", "42|18|11", "42|1|25", "42|1|26", "42|1|28", "42|1|31", "42|1|33", "42|3|22", "42|3|23", "42|3|26", "42|4|1", "42|4|2", "43|10|37", "43|10|47", "43|10|48", "43|11|16", "43|13|24", "43|15|26", "43|15|34", "43|16|15", "43|16|33", "43|18|25", "43|18|8", "43|19|3", "43|19|4", "43|19|5", "43|1|10", "43|1|21", "43|1|5", "43|1|8", "43|22|16", "43|28|29", "43|2|38", "43|2|41", "43|8|12", "43|8|13", "43|8|16", "43|8|36", "43|8|37", "43|8|38", "43|9|18", "44|16|24", "44|16|5", "44|1|7", "44|6|16", "44|6|3", "44|6|4", "44|8|11", "44|8|35", "44|9|2", "45|10|2", "45|12|13", "45|15|29", "45|16|7", "45|1|13", "45|1|14", "45|1|15", "45|1|16", "45|1|17", "45|8|12", "47|1|10", "47|1|11", "47|3|27", "48|4|5", "49|4|19", "4|15|5", "4|30|10", "4|33|11", "4|6|19", "50|2|12", "52|2|16", "54|2|24", "57|11|2", "57|12|14", "57|4|12", "57|6|2", "58|1|12", "58|2|23", "58|3|17", "58|5|18", "59|3|21", "60|3|5", "65|18|2", "65|20|10", "65|2|19", "6|18|10", "6|5|17", "8|8|18", "9|7|16", "9|7|7"])
-          PLACEHOLDER = re.compile(r"^\[?\d+절(\]과|과)\s*(같음|동일함|상동)\]?$")
 
 
-          def fail(msg):
-              return {"ok": 0, "reference": "", "verse_text": "", "context": "", "error": json.dumps({"error": msg}, ensure_ascii=False)}
-
-
-          def main(body: str, status_code: int, book: str, book_index: int, chapter: int, verse: int) -> dict:
+          def main(body: str, status_code: int) -> dict:
+              empty = {"ok": 0, "reference": "", "verse_text": "", "context": ""}
               if status_code != 200 or not body:
-                  return fail(f"원본 성경 파일을 못 받았어요(HTTP {status_code}). Dify 검문소가 raw.githubusercontent.com 을 막는지 확인해 주세요")
-              if hashlib.sha256(body.encode("utf-8")).hexdigest() != SHA.get(book):
-                  return fail(f"{book} 원본 파일 지문이 달라서 쓰지 않았어요")
-              chapters = {c["chapter"]: {v["verse"]: v["text"] for v in c["verses"]} for c in json.loads(body)["chapters"]}
-
-              def usable(ch, v):
-                  t = chapters.get(ch, {}).get(v)
-                  return t is not None and t.strip() and not PLACEHOLDER.match(t.strip()) and f"{book_index}|{ch}|{v}" not in DISPUTED
-
-              if chapter == 0:   # 랜덤
-                  cands = [(ch, v) for ch, vs in chapters.items() for v in vs if usable(ch, v)]
-                  chapter, verse = random.choice(cands)
-              if chapter not in chapters:
-                  return fail(f"{book}에는 {chapter}장이 없어요({len(chapters)}장까지 있어요)")
-              if verse not in chapters[chapter]:
-                  return fail(f"{book} {chapter}장에는 {verse}절이 없어요({max(chapters[chapter])}절까지 있어요)")
-              if not usable(chapter, verse):
-                  return fail(f"{book} {chapter}:{verse} 은 두 원본 자료가 서로 달라서 아직 쓰지 않아요")
-              ctx = [f"{v} {chapters[chapter][v]}" for v in range(verse - 2, verse + 3) if v != verse and usable(chapter, v)]
-              return {"ok": 1, "reference": f"{book} {chapter}:{verse}", "verse_text": chapters[chapter][verse],
-                      "context": "\n".join(ctx), "error": ""}
+                  return {**empty, "error": json.dumps({"error": f"앱(bible.delvrio.com)에서 구절을 못 받았어요(HTTP {status_code})"}, ensure_ascii=False)}
+              d = json.loads(body)
+              if not d.get("ok"):
+                  return {**empty, "error": json.dumps({"error": d.get("error") or "구절을 못 찾았어요"}, ensure_ascii=False)}
+              return {"ok": 1, "reference": d["reference"], "verse_text": d["verse_text"], "context": d.get("context", ""), "error": ""}
 
         variables:
         - variable: body
@@ -378,22 +227,6 @@ workflow:
           value_selector:
           - fetch
           - status_code
-        - variable: book
-          value_selector:
-          - parse
-          - book
-        - variable: book_index
-          value_selector:
-          - parse
-          - book_index
-        - variable: chapter
-          value_selector:
-          - parse
-          - chapter
-        - variable: verse
-          value_selector:
-          - parse
-          - verse
         outputs:
           ok:
             type: number
@@ -413,10 +246,10 @@ workflow:
     - id: source_ok
       type: custom
       position:
-        x: 1580
+        x: 980
         y: 280
       positionAbsolute:
-        x: 1580
+        x: 980
         y: 280
       sourcePosition: right
       targetPosition: left
@@ -439,13 +272,40 @@ workflow:
             variable_selector:
             - source
             - ok
+    - id: kr
+      type: custom
+      position:
+        x: 1280
+        y: 280
+      positionAbsolute:
+        x: 1280
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      height: 92
+      width: 244
+      data:
+        type: knowledge-retrieval
+        title: 비슷한 구절 찾기
+        desc: 지식 "성경 개역한글"에서 뜻이 비슷한 구절 8개(관련 구절 후보)
+        selected: false
+        dataset_ids:
+        - __DS:성경 개역한글__
+        query_variable_selector:
+        - source
+        - verse_text
+        retrieval_mode: multiple
+        multiple_retrieval_config:
+          reranking_enable: false
+          reranking_mode: reranking_model
+          top_k: 8
     - id: llm
       type: custom
       position:
-        x: 1880
+        x: 1580
         y: 280
       positionAbsolute:
-        x: 1880
+        x: 1580
         y: 280
       sourcePosition: right
       targetPosition: left
@@ -457,8 +317,10 @@ workflow:
         desc: 설명 7가지를 JSON 으로 쓴다(본문은 쓰지 않는다)
         selected: false
         context:
-          enabled: false
-          variable_selector: []
+          enabled: true
+          variable_selector:
+          - kr
+          - result
         model:
           completion_params:
             max_tokens: 2000
@@ -479,7 +341,7 @@ workflow:
             - background: 누가, 언제, 왜 한 말인지 (2~3문장). 확실하지 않으면 ""
             - reflection: 오늘 삶에 적용하는 묵상 (3~4문장)
             - prayer: 1인칭 짧은 기도 (2~3문장, "아멘"으로 끝)
-            - related: 함께 읽을 구절 주소만 최대 3개 (예: "요한일서 4:9"). 본문은 쓰지 않는다
+            - related: 함께 읽을 구절 주소만 최대 3개 (예: "요한일서 4:9"). 아래 "비슷한 구절 후보"에서 이 구절과 뜻이 이어지는 것을 먼저 고르고, 이 구절 자신은 빼고, 본문은 쓰지 않는다
             규칙:
             - 성경 구절을 다시 쓰거나 바꿔 말하지 않는다. 인용이 필요하면 "이 말씀"이라고만 한다.
             - 확실한 것만 쓴다. 모르면 빈칸.
@@ -490,16 +352,18 @@ workflow:
             구절: {{#source.reference#}} (개역한글)
             본문: {{#source.verse_text#}}
             앞뒤 문맥: {{#source.context#}}
+            비슷한 구절 후보(성경 개역한글 지식):
+            {{#context#}}
         variables: []
         vision:
           enabled: false
     - id: end
       type: custom
       position:
-        x: 2180
+        x: 1880
         y: 280
       positionAbsolute:
-        x: 2180
+        x: 1880
         y: 280
       sourcePosition: right
       targetPosition: left
@@ -523,35 +387,13 @@ workflow:
           - llm
           - text
           variable: text
-    - id: end_parse
-      type: custom
-      position:
-        x: 980
-        y: 480
-      positionAbsolute:
-        x: 980
-        y: 480
-      sourcePosition: right
-      targetPosition: left
-      height: 90
-      width: 244
-      data:
-        type: end
-        title: 주소를 못 읽음
-        desc: ''
-        selected: false
-        outputs:
-        - value_selector:
-          - parse
-          - error
-          variable: text
     - id: end_source
       type: custom
       position:
-        x: 1880
+        x: 1280
         y: 480
       positionAbsolute:
-        x: 1880
+        x: 1280
         y: 480
       sourcePosition: right
       targetPosition: left
