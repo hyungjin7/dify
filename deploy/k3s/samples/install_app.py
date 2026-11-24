@@ -232,7 +232,7 @@ if save_as:
     print(f"    → 앱 키를 Secret bbb-namespace/{save_as} 에 저장" + (f"하고 {svc} 를 다시 띄웠습니다" if svc else ""))
 
 # 7) 실제 질문
-step(7, f"질문: {QUESTION}")
+step(7, {"startup-collect-dify-app": "지금 한 번 수집(10~20분)", "startup-report-dify-app": "지금 한 번 보고서(5~15분)"}.get(save_as or "", f"질문: {QUESTION}"))
 t0 = time.monotonic()
 inputs = json.loads(os.getenv("INPUTS", "{}"))
 if save_as in ("news-dify-app", "news-dify-collect-app"):
