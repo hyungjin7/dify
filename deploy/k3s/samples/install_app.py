@@ -13,7 +13,7 @@ kubectl 되는 곳(맥북)에서:
   SAVE_APP_KEY=docs-answer-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/docs-answer-workflow.yml "서브넷이 필요한 이유"  # ccc 골라 묻기
   SAVE_APP_KEY=startup-collect-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/startup-collect-workflow.yml  # 신규 창업아이템 ① 자료 수집(7·8·13·14시)
   SAVE_APP_KEY=startup-report-dify-app python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/startup-report-workflow.yml  # 신규 창업아이템 ③ 보고서(9·15시)
-  SAVE_APP_KEY=easybible-dify-app ENV_FILE=~/projects/easybible/.env.local INPUTS='{"reference":"창세기 1장 1절"}' python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/bible-study-workflow.yml  # 말씀 스와이프 구절 공부(주소만, 비우면 랜덤)
+  SAVE_APP_KEY=easybible-dify-app SAVE_APP_KEY_NS=easybible INPUTS='{"reference":"창세기 1장 1절"}' python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/bible-study-workflow.yml  # 말씀 스와이프 구절 공부(주소만, 비우면 랜덤, 키는 bible.delvrio.com 앱 namespace 로)
 
 하는 일(다시 돌려도 같은 이름 앱을 덮어쓴다):
   1) DSL 이 rag_api_key·news_api_key·telegram_*·startup_telegram_* 을 쓰면 그 값(Secret bbb-namespace/rag-dify-key·news-dify-key·news-telegram·startup-telegram)을 kubectl 로 읽어 넣는다
@@ -221,16 +221,19 @@ if not tok:
 
 # 6-1) 앱 키를 bbb 가 쓰게 Secret 으로 저장(SAVE_APP_KEY=<Secret 이름>, 예: news-dify-app → news 가 이 앱을 부른다)
 save_as = os.getenv("SAVE_APP_KEY", "").strip()
+save_ns = os.getenv("SAVE_APP_KEY_NS", "").strip() or "bbb-namespace"   # 다른 앱 namespace 에 둘 때(예: easybible)
 if save_as:
     subprocess.run(["kubectl", "apply", "-f", "-"], check=True, capture_output=True, input=json.dumps(
         {"apiVersion": "v1", "kind": "Secret", "type": "Opaque",
-         "metadata": {"name": save_as, "namespace": "bbb-namespace"}, "stringData": {"key": tok}}).encode())
+         "metadata": {"name": save_as, "namespace": save_ns}, "stringData": {"key": tok}}).encode())
     user_of = {"news-dify-app": "news", "news-dify-collect-app": "news", "ncp-guide-dify-app": "agent", "tech-docs-dify-app": "agent", "docs-answer-dify-app": "agent",
                "startup-collect-dify-app": "agent", "startup-report-dify-app": "agent"}   # 이 키를 쓰는 bbb 서비스
     svc = user_of.get(save_as)
     if svc:
         subprocess.run(["kubectl", "-n", "bbb-namespace", "rollout", "restart", f"deploy/{svc}"], check=True, capture_output=True)
-    print(f"    → 앱 키를 Secret bbb-namespace/{save_as} 에 저장" + (f"하고 {svc} 를 다시 띄웠습니다" if svc else ""))
+    if save_as == "easybible-dify-app":   # 말씀 스와이프(namespace easybible)가 새 키를 읽게. 아직 배포 전이면 건너뜀
+        subprocess.run(["kubectl", "-n", save_ns, "rollout", "restart", "deploy/easybible"], capture_output=True)
+    print(f"    → 앱 키를 Secret {save_ns}/{save_as} 에 저장" + (f"하고 {svc} 를 다시 띄웠습니다" if svc else ""))
 
 # 6-2) 앱 키를 이 컴퓨터의 .env 파일에 넣기(ENV_FILE=<경로>, 예: 말씀 스와이프 앱 easybible/.env.local).
 #      DIFY_API_URL·DIFY_API_KEY 두 줄만 바꾸고 나머지 줄은 그대로 둔다. 키는 화면에 찍지 않는다.
