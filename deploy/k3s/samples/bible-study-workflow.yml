@@ -1,0 +1,180 @@
+# 말씀 스와이프(easybible) 구절 공부 v2 (2026-11-24 사용자 요청).
+# 앱 서버가 원본 성경에서 꺼낸 구절·앞뒤 문맥을 넣으면 설명 7가지(title·meaning·did_you_know·background·reflection·prayer·related)를
+#   JSON 글자로 돌려준다. 앱은 이 7칸만 쓰고, related 는 주소만 받아 원본에서 다시 찾는다. 성경 본문은 AI 가 쓰지 않는다.
+# 올리기: ENV_FILE=~/projects/easybible/.env.local \
+#   INPUTS='{"reference":"요한복음 3:16","verse_text":"하나님이 세상을 이처럼 사랑하사 독생자를 주셨으니 이는 저를 믿는 자마다 멸망치 않고 영생을 얻게 하려 하심이니라","translation":"개역한글"}' \
+#   python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/bible-study-workflow.yml
+app:
+  description: 말씀 스와이프 앱의 구절 공부 설명(본문은 쓰지 않음)
+  icon: 📖
+  icon_background: '#E0F2FE'
+  mode: workflow
+  name: 말씀 스와이프 구절 공부
+  use_icon_as_answer_icon: false
+kind: app
+version: 0.7.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        sourceType: start
+        targetType: llm
+      id: start-llm
+      source: start
+      sourceHandle: source
+      target: llm
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: llm
+        targetType: end
+      id: llm-end
+      source: llm
+      sourceHandle: source
+      target: end
+      targetHandle: target
+      type: custom
+    nodes:
+    - data:
+        desc: 말씀 스와이프 앱 서버가 원본에서 꺼낸 구절을 넣어 부른다
+        selected: false
+        title: 시작
+        type: start
+        variables:
+        - label: 구절 주소
+          max_length: 100
+          options: []
+          required: true
+          type: text-input
+          variable: reference
+        - label: 구절 본문(원본 그대로)
+          max_length: 4000
+          options: []
+          required: true
+          type: paragraph
+          variable: verse_text
+        - label: 앞뒤 문맥
+          max_length: 8000
+          options: []
+          required: false
+          type: paragraph
+          variable: context
+        - label: 번역
+          max_length: 50
+          options: []
+          required: false
+          type: text-input
+          variable: translation
+      height: 170
+      id: start
+      position:
+        x: 80
+        y: 280
+      positionAbsolute:
+        x: 80
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 구절 설명 7가지를 JSON 으로 쓴다(본문은 쓰지 않는다)
+        model:
+          completion_params:
+            max_tokens: 2000
+            temperature: 0.3
+          mode: chat
+          name: gemma-4-E4B-it-MLX-8bit
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: sys-prompt
+          role: system
+          text: |-
+            너는 성경을 쉽게 풀어 주는 한국어 선생님이다. 12살도 알아듣게 쓴다.
+            아래 구절을 보고 JSON 하나만 답한다. 코드블록·다른 말은 쓰지 않는다.
+            {"title": "", "meaning": "", "did_you_know": "", "background": "", "reflection": "", "prayer": "", "related": []}
+            - title: 이 구절의 주제 (2~6글자, 예: 하나님의 사랑)
+            - meaning: 성경적 의미 (3~4문장)
+            - did_you_know: 배경 속 흥미로운 사실 1가지 (1~2문장). 확실하지 않으면 ""
+            - background: 누가, 언제, 왜 한 말인지 (2~3문장). 확실하지 않으면 ""
+            - reflection: 오늘 삶에 적용하는 묵상 (3~4문장)
+            - prayer: 1인칭 짧은 기도 (2~3문장, "아멘"으로 끝)
+            - related: 함께 읽을 구절 주소만 최대 3개 (예: "요한일서 4:9"). 본문은 쓰지 않는다
+            규칙:
+            - 성경 구절을 다시 쓰거나 바꿔 말하지 않는다. 인용이 필요하면 "이 말씀"이라고만 한다.
+            - 확실한 것만 쓴다. 모르면 빈칸.
+            - 교단 교리 논쟁은 피하고 위로와 적용 중심으로 쓴다.
+        - id: user-prompt
+          role: user
+          text: |-
+            구절: {{#start.reference#}} ({{#start.translation#}})
+            본문: {{#start.verse_text#}}
+            앞뒤 문맥: {{#start.context#}}
+        selected: false
+        title: 구절 설명(LLM)
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 98
+      id: llm
+      position:
+        x: 380
+        y: 280
+      positionAbsolute:
+        x: 380
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: JSON 글자 그대로(앱이 7칸만 꺼내 쓴다)
+        outputs:
+        - value_selector:
+          - llm
+          - text
+          variable: text
+        selected: false
+        title: 끝
+        type: end
+      height: 90
+      id: end
+      position:
+        x: 680
+        y: 280
+      positionAbsolute:
+        x: 680
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.8
