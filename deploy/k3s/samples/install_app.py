@@ -231,8 +231,17 @@ if save_as:
         subprocess.run(["kubectl", "-n", "bbb-namespace", "rollout", "restart", f"deploy/{svc}"], check=True, capture_output=True)
     print(f"    → 앱 키를 Secret bbb-namespace/{save_as} 에 저장" + (f"하고 {svc} 를 다시 띄웠습니다" if svc else ""))
 
-# 7) 실제 질문
-step(7, {"startup-collect-dify-app": "지금 한 번 수집(10~20분)", "startup-report-dify-app": "지금 한 번 보고서(5~15분)"}.get(save_as or "", f"질문: {QUESTION}"))
+# 7) 시험 실행 — 이름표는 실제로 하는 일로 보인다(질문을 보내는 앱만 "질문: …")
+RUN_LABELS = {"news-dify-app": "지금 시각 요약 한 번(news 를 통해)", "news-dify-collect-app": "지금 한 번 뉴스 수집(news 를 통해)",
+              "startup-collect-dify-app": "지금 한 번 자료 수집(agent 를 통해, 10~20분)",
+              "startup-report-dify-app": "지금 한 번 보고서(agent 를 통해, 5~15분)"}
+if save_as in RUN_LABELS:
+    label = RUN_LABELS[save_as]
+elif "\n  mode: workflow" in dsl and not ("variable: question" in dsl or "variable: request" in dsl):
+    label = "시험 실행(질문 없는 워크플로)"
+else:
+    label = f"질문: {QUESTION}"
+step(7, label)
 t0 = time.monotonic()
 inputs = json.loads(os.getenv("INPUTS", "{}"))
 if save_as in ("news-dify-app", "news-dify-collect-app"):
