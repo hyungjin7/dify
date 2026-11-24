@@ -1,6 +1,6 @@
 # 말씀 스와이프(easybible) 구절 공부 v3 (2026-11-24 사용자 결정: "본문=앱, 관련 구절=Dify 지식").
 # 구절 주소 하나만 넣는다(창세기 1장 1절, 창 1:1, 요 3:16 / 비우면 랜덤).
-#   본문 = 우리 앱 https://bible.delvrio.com/api/verse (원본 대조를 통과한 절만, 원본 문자열 그대로). GitHub 를 부르지 않는다.
+#   본문 = 우리 앱 http://easybible.easybible.svc.cluster.local/api/verse(= bible.delvrio.com, 검문소 허용 목록에 있음) (원본 대조를 통과한 절만, 원본 문자열 그대로). GitHub 를 부르지 않는다.
 #   관련 구절 후보 = Dify 지식 "성경 개역한글"(한 절 = 한 조각, bible_to_dify_knowledge.py 로 올림)에서 뜻으로 8개 찾기.
 #   AI 는 설명 7가지(JSON 글자 text)만 쓴다. 앱은 관련 구절 주소를 원본으로 다시 확인한다.
 # 앱이 보내는 verse_text·context·translation 은 받아도 쓰지 않는다(본문은 항상 앱 API).
@@ -165,10 +165,10 @@ workflow:
       data:
         type: http-request
         title: 앱에서 원본 구절 받기
-        desc: bible.delvrio.com/api/verse (원본 대조 통과한 절만)
+        desc: 앱 easybible /api/verse (클러스터 안 주소, 원본 대조 통과한 절만)
         selected: false
         method: get
-        url: https://bible.delvrio.com/api/verse
+        url: http://easybible.easybible.svc.cluster.local/api/verse
         authorization:
           type: no-auth
           config: null
@@ -212,7 +212,7 @@ workflow:
           def main(body: str, status_code: int) -> dict:
               empty = {"ok": 0, "reference": "", "verse_text": "", "context": ""}
               if status_code != 200 or not body:
-                  return {**empty, "error": json.dumps({"error": f"앱(bible.delvrio.com)에서 구절을 못 받았어요(HTTP {status_code})"}, ensure_ascii=False)}
+                  return {**empty, "error": json.dumps({"error": f"앱(easybible)에서 구절을 못 받았어요(HTTP {status_code})"}, ensure_ascii=False)}
               d = json.loads(body)
               if not d.get("ok"):
                   return {**empty, "error": json.dumps({"error": d.get("error") or "구절을 못 찾았어요"}, ensure_ascii=False)}
