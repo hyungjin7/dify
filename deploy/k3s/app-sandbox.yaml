@@ -107,7 +107,8 @@ spec:
         - {name: SSRF_PROXY_ALLOW_PRIVATE_IPS, value: "192.168.219.48/32"}
         # 우리 RAG 외부 지식 창구(Dify 는 외부 지식 API 를 이 검문소로 부른다)
         # ego(맥북 Ego Lite 렌더링, 2026-11-15 네이버 주요뉴스 요약 앱)도 연다
-        - {name: SSRF_PROXY_ALLOW_PRIVATE_DOMAINS, value: "rag-service.bbb-namespace.svc.cluster.local,ego.bbb-namespace.svc.cluster.local,news-service.bbb-namespace.svc.cluster.local"}
+        # agent(2026-11-24 신규 창업아이템 앱의 /dify/startup/*·/dify/llm/*)도 연다
+        - {name: SSRF_PROXY_ALLOW_PRIVATE_DOMAINS, value: "rag-service.bbb-namespace.svc.cluster.local,ego.bbb-namespace.svc.cluster.local,news-service.bbb-namespace.svc.cluster.local,agent-service.bbb-namespace.svc.cluster.local"}
         ports:
         - containerPort: 3128
         readinessProbe:
