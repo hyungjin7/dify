@@ -303,9 +303,10 @@ elif save_as in ("startup-collect-dify-app", "startup-report-dify-app"):
     for attempt in range(6):
         out = subprocess.run(["kubectl", "-n", "bbb-namespace", "exec", "deploy/dworker", "--", "python", "-c", code_],
                              capture_output=True, text=True)
-        if out.returncode == 0 or "Connection refused" not in out.stderr:
+        # agent 가 막 다시 뜬 직후엔 준비된 Pod 가 없어 'No route to host'(Errno 113)도 난다(2026-11-25 실측)
+        if out.returncode == 0 or not ("Connection refused" in out.stderr or "No route to host" in out.stderr):
             break
-        print(f"    → agent 가 아직 연결을 안 받음(Connection refused), 10초 뒤 다시 ({attempt + 1}/6)")
+        print(f"    → agent 가 아직 연결을 안 받음(다시 뜨는 중), 10초 뒤 다시 ({attempt + 1}/6)")
         time.sleep(10)
     sec = time.monotonic() - t0
     res = {}
