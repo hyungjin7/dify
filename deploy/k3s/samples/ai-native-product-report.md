@@ -13,7 +13,7 @@
 
 | 곳 | 파일 | 하는 일 |
 |---|---|---|
-| dify | `startup-collect-workflow.yml` | Ego Lite 로 Google 8 + YouTube 4 검색(검색어 묶음 5개를 수집마다 돌려 씀, 하루 4번 → 약 1.2일에 한 바퀴) → 후보(웹 60·영상 24) → 중복 빼기 → 본문·자막 → agent 저장 |
+| dify | `startup-collect-workflow.yml` | Ego Lite 로 Google 8 + YouTube 4 검색(업종 24 × 관점 조합: Google 384·YouTube 96개를 수집마다 다음 차례로, 약 12일에 한 바퀴) → 후보(웹 60·영상 24) → 중복 빼기 → 본문·자막 → agent 저장 |
 | dify | `startup-report-workflow.yml` | agent 자료 50~80건 → Prompt Templates 보고서 → 출처 다시 쓰기·600자 점검 → agent 저장 → 텔레그램 |
 | bbb | agent `startup_research.py` | 표 3개, Dify 창구 `/dify/startup/*`, 자료별 분석, 화면 API, 실행 주소 |
 | bbb | agent `dify_llm.py` | `/dify/llm/template`(템플릿을 slug 또는 이름으로 찾음) |
