@@ -1,5 +1,5 @@
 # 신규 창업아이템 ① 자료 수집(2026-11-24 사용자 결정, 설계서 https://claude.ai/artifact/B7ce6SBn3HGakCXWw3nfxH).
-# 흐름: 시작(run_id·page) → 검색 주소 12개 → Ego Lite 로 Google 8·YouTube 4 검색(동시) → 후보 고르기(웹 60·영상 24)
+# 흐름: 시작(run_id·page) → 검색 주소 12개(검색어 묶음 5개를 수집마다 돌려 씀) → Ego Lite 로 Google 8·YouTube 4 검색(동시) → 후보 고르기(웹 60·영상 24)
 #   → agent 중복 확인 → 웹 본문·영상 자막 열기(동시) → 300자 넘는 것만 agent 저장(웹·영상 따로) → 끝.
 # LLM 없음. 저장하면 agent 가 자료별 분석(②, 템플릿 startup.item.analyze)을 바로 한다.
 # 브라우저는 사용자 Ego Lite 앱 하나(ego 서비스 CDP)만 쓴다. 다른 브라우저를 띄우지 않는다.
@@ -232,18 +232,44 @@ workflow:
     - data:
         code: |
           import json
+          from datetime import datetime, timedelta, timezone
           from urllib.parse import quote_plus
 
-          # 검색어(설계서 ①): 개발 민주화·수작업 자동화·AI 창업 기회 세 축, 한국어·영어
-          GOOGLE = ["AI 에이전트 스타트업 창업 아이템", "AI 업무 자동화 SaaS 사례", "생성형 AI 생산성 도구 시장 규모",
-                    "바이브코딩 1인 창업 수익", "AI agent startup productivity tool launch",
-                    "AI native SaaS workflow automation startup funding", "vertical AI agent small business automation",
-                    "no-code AI app builder trend"]
-          YOUTUBE = ["AI 에이전트 창업", "AI 자동화 SaaS 부업", "AI agent startup ideas", "vibe coding SaaS build"]
+          # 검색어(설계서 ①): 개발 민주화·수작업 자동화·AI 창업 기회 세 축, 한국어·영어.
+          # 2026-11-25: 같은 12개만 매번 찾으면 결과가 거의 같아 '이미 있음'만 늘어남 → 묶음 5개를 수집 때마다 돌려 쓴다.
+          GOOGLE_POOL = [
+              ["AI 에이전트 스타트업 창업 아이템", "AI 업무 자동화 SaaS 사례", "생성형 AI 생산성 도구 시장 규모",
+               "바이브코딩 1인 창업 수익", "AI agent startup productivity tool launch",
+               "AI native SaaS workflow automation startup funding", "vertical AI agent small business automation",
+               "no-code AI app builder trend"],
+              ["AI 회계 정산 자동화 스타트업", "AI 고객 상담 자동화 중소기업", "AI 문서 작성 자동화 서비스 출시",
+               "AI 스타트업 시드 투자 유치 2026", "AI bookkeeping automation startup", "AI customer support agent SMB",
+               "AI document workflow startup seed round", "solo founder AI SaaS revenue"],
+              ["AI 물류 자동화 스타트업", "AI 세무 신고 자동화 서비스", "AI 영업 자동화 B2B SaaS",
+               "AI 코딩 도구 개발 생산성 효과", "AI logistics operations automation startup", "AI sales agent B2B startup",
+               "AI coding assistant developer productivity study", "AI agent marketplace launch"],
+              ["AI 채용 인사 자동화 스타트업", "AI 법률 계약서 검토 서비스", "AI 마케팅 콘텐츠 자동화 툴",
+               "AI 데이터 분석 자동화 중소기업", "AI recruiting HR automation startup", "AI legal contract review startup",
+               "AI marketing automation tool small business", "AI analytics copilot startup"],
+              ["AI 에이전트 업무 대체 사례 기업", "AI 구독형 SaaS 가격 전략", "AI 1인 기업 자동화 도구",
+               "AI 스타트업 엑싯 인수 사례", "enterprise AI agent adoption case study", "AI SaaS pricing usage based",
+               "one person company AI tools stack", "AI startup acquisition 2026"],
+          ]
+          YOUTUBE_POOL = [
+              ["AI 에이전트 창업", "AI 자동화 SaaS 부업", "AI agent startup ideas", "vibe coding SaaS build"],
+              ["AI 업무 자동화 사례", "1인 AI 창업 수익", "AI SaaS from idea to revenue", "AI automation agency"],
+              ["노코드 AI 앱 만들기", "AI 스타트업 투자 트렌드", "build AI agent business", "AI micro SaaS ideas"],
+              ["AI 생산성 도구 리뷰", "AI 고객 상담 자동화", "AI workflow automation n8n business", "AI startup founder interview"],
+              ["AI 에이전트 실무 활용", "AI 사업 아이템 2026", "vertical AI startups", "AI tools for small business"],
+          ]
+          SLOT = {7: 0, 8: 1, 13: 2, 14: 3}   # 하루 수집 4번(7·8·13·14시), 그 밖(지금 수집)은 시각으로
 
 
           def main(page: str) -> dict:
               p2 = str(page or "1").strip() == "2"
+              now = datetime.now(timezone(timedelta(hours=9)))
+              turn = now.toordinal() * 4 + SLOT.get(now.hour, now.hour)
+              GOOGLE, YOUTUBE = GOOGLE_POOL[turn % len(GOOGLE_POOL)], YOUTUBE_POOL[turn % len(YOUTUBE_POOL)]
               # Google: 최근 1달(tbs=qdr:m), 2쪽 = start=10. YouTube: 이번 달(sp=EgIIBA), 2쪽 = 업로드 날짜순(sp=CAI)
               g = [f"https://www.google.com/search?q={quote_plus(q)}&hl=ko&num=20&tbs=qdr:m" + ("&start=10" if p2 else "")
                    for q in GOOGLE]
@@ -254,7 +280,7 @@ workflow:
               return {"web_body": body(g), "yt_body": body(y), "queries": json.dumps(GOOGLE + YOUTUBE, ensure_ascii=False),
                       "page_used": "2" if p2 else "1"}
         code_language: python3
-        desc: Google 8개 + YouTube 4개 검색어 → Ego Lite 로 열 주소(2쪽이면 다음 결과)
+        desc: 검색어 묶음 5개 중 이번 차례(Google 8 + YouTube 4) → Ego Lite 로 열 주소(2쪽이면 다음 결과)
         outputs:
           web_body:
             children: null
