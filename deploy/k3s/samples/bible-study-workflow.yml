@@ -3,6 +3,8 @@
 #   본문 = 우리 앱 http://easybible.easybible.svc.cluster.local/api/verse(= bible.delvrio.com, 검문소 허용 목록에 있음) (원본 대조를 통과한 절만, 원본 문자열 그대로). GitHub 를 부르지 않는다.
 #   관련 구절 후보 = Dify 지식 "성경 개역한글"(한 절 = 한 조각, bible_to_dify_knowledge.py 로 올림)에서 뜻으로 8개 찾기.
 #   AI 는 설명 7가지(JSON 글자 text)만 쓴다. 앱은 관련 구절 주소를 원본으로 다시 확인한다.
+#   AI 는 Dify LLM 노드가 아니라 bbb LLM Proxy 로 부른다(2026-11-25 사용자 결정, LLM Proxy 규칙):
+#   agent /dify/llm/template + Prompt Templates slug easybible.study (프롬프트는 그 화면에서 고친다, 기록 = LLM 로그).
 # 앱이 보내는 verse_text·context·translation 은 받아도 쓰지 않는다(본문은 항상 앱 API).
 # 올리기(지식을 먼저 올린 뒤): SAVE_APP_KEY=easybible-dify-app SAVE_APP_KEY_NS=easybible \
 #   INPUTS='{"reference":"창세기 1장 1절"}' python3 deploy/k3s/samples/install_app.py deploy/k3s/samples/bible-study-workflow.yml
@@ -17,7 +19,17 @@ kind: app
 version: 0.7.0
 workflow:
   conversation_variables: []
-  environment_variables: []
+  environment_variables:
+  - description: Prompt Templates slug (bbb agent)
+    id: 3b1f6a20-7c4d-4e8a-9f21-5d0e6b7a8c11
+    name: template_slug
+    value: easybible.study
+    value_type: string
+  - description: bbb agent Dify 창구 키(Secret bbb-namespace/agent-dify-key)
+    id: 4c2a7b31-8d5e-4f9b-a032-6e1f7c8b9d22
+    name: agent_api_key
+    value: ''
+    value_type: secret
   features:
     file_upload:
       enabled: false
@@ -90,19 +102,39 @@ workflow:
     - data:
         isInIteration: false
         sourceType: knowledge-retrieval
-        targetType: llm
-      id: kr-source-llm
+        targetType: code
+      id: kr-source-prep
       source: kr
       sourceHandle: 'source'
-      target: llm
+      target: prep
       targetHandle: target
       type: custom
     - data:
         isInIteration: false
-        sourceType: llm
+        sourceType: code
+        targetType: http-request
+      id: prep-source-ask
+      source: prep
+      sourceHandle: 'source'
+      target: ask
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: code
+      id: ask-source-done
+      source: ask
+      sourceHandle: 'source'
+      target: done
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        sourceType: code
         targetType: end
-      id: llm-source-end
-      source: llm
+      id: done-source-end
+      source: done
       sourceHandle: 'source'
       target: end
       targetHandle: target
@@ -299,7 +331,7 @@ workflow:
           reranking_enable: false
           reranking_mode: reranking_model
           top_k: 8
-    - id: llm
+    - id: prep
       type: custom
       position:
         x: 1580
@@ -309,61 +341,149 @@ workflow:
         y: 280
       sourcePosition: right
       targetPosition: left
-      height: 98
+      height: 54
       width: 244
       data:
-        type: llm
-        title: 구절 설명(AI)
-        desc: 설명 7가지를 JSON 으로 쓴다(본문은 쓰지 않는다)
+        type: code
+        title: AI 요청 만들기
+        desc: 구절·문맥·비슷한 구절 후보를 Prompt Templates 변수로 묶는다
         selected: false
-        context:
-          enabled: true
-          variable_selector:
+        code_language: python3
+        code: |
+          import json
+
+
+          def main(reference: str, verse_text: str, context: str, kr: list, slug: str) -> dict:
+              parts = []
+              for x in kr or []:
+                  c = (x or {}).get("content") if isinstance(x, dict) else str(x or "")
+                  if c:
+                      parts.append(str(c).strip())
+              body = {"template_key": slug or "easybible.study", "subject": f"말씀 풀이 {reference}",
+                      "variables": {"reference": reference, "verse_text": verse_text, "context": context or "",
+                                    "candidates": "\n".join(parts) or "(없음)"}}
+              return {"body": json.dumps(body, ensure_ascii=False)}
+
+        variables:
+        - variable: reference
+          value_selector:
+          - source
+          - reference
+        - variable: verse_text
+          value_selector:
+          - source
+          - verse_text
+        - variable: context
+          value_selector:
+          - source
+          - context
+        - variable: kr
+          value_selector:
           - kr
           - result
-        model:
-          completion_params:
-            max_tokens: 2000
-            temperature: 0.3
-          mode: chat
-          name: gemma-4-E4B-it-MLX-8bit
-          provider: langgenius/openai_api_compatible/openai_api_compatible
-        prompt_template:
-        - id: sys-prompt
-          role: system
-          text: |-
-            너는 성경을 쉽게 풀어 주는 한국어 선생님이다. 12살도 알아듣게 쓴다.
-            아래 구절을 보고 JSON 하나만 답한다. 코드블록·다른 말은 쓰지 않는다.
-            {"title": "", "meaning": "", "did_you_know": "", "background": "", "reflection": "", "prayer": "", "related": []}
-            - title: 이 구절의 주제 (2~6글자, 예: 하나님의 사랑)
-            - meaning: 성경적 의미 (3~4문장)
-            - did_you_know: 배경 속 흥미로운 사실 1가지 (1~2문장). 확실하지 않으면 ""
-            - background: 누가, 언제, 왜 한 말인지 (2~3문장). 확실하지 않으면 ""
-            - reflection: 오늘 삶에 적용하는 묵상 (3~4문장)
-            - prayer: 1인칭 짧은 기도 (2~3문장, "아멘"으로 끝)
-            - related: 함께 읽을 구절 주소만 최대 3개 (예: "요한일서 4:9"). 아래 "비슷한 구절 후보"에서 이 구절과 뜻이 이어지는 것을 먼저 고르고, 이 구절 자신은 빼고, 본문은 쓰지 않는다
-            규칙:
-            - 성경 구절을 다시 쓰거나 바꿔 말하지 않는다. 인용이 필요하면 "이 말씀"이라고만 한다.
-            - 확실한 것만 쓴다. 모르면 빈칸.
-            - 교단 교리 논쟁은 피하고 위로와 적용 중심으로 쓴다.
-        - id: user-prompt
-          role: user
-          text: |-
-            구절: {{#source.reference#}} (개역한글)
-            본문: {{#source.verse_text#}}
-            앞뒤 문맥: {{#source.context#}}
-            비슷한 구절 후보(성경 개역한글 지식):
-            {{#context#}}
-        variables: []
-        vision:
-          enabled: false
-    - id: end
+        - variable: slug
+          value_selector:
+          - env
+          - template_slug
+        outputs:
+          body:
+            type: string
+            children: null
+    - id: ask
       type: custom
       position:
         x: 1880
         y: 280
       positionAbsolute:
         x: 1880
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      height: 90
+      width: 244
+      data:
+        type: http-request
+        title: 말씀 풀이(AI, LLM Proxy)
+        desc: bbb agent /dify/llm/template · slug easybible.study. 프롬프트는 Prompt Templates 화면에서 고친다
+        selected: false
+        method: post
+        url: http://agent-service.bbb-namespace.svc.cluster.local:8000/dify/llm/template
+        authorization:
+          type: api-key
+          config:
+            type: bearer
+            header: ''
+            api_key: '{{#env.agent_api_key#}}'
+        headers: Content-Type:application/json
+        params: ''
+        body:
+          type: json
+          data:
+          - type: text
+            value: '{{#prep.body#}}'
+        ssl_verify: false
+        retry_config:
+          max_retries: 0
+          retry_enabled: false
+          retry_interval: 2000
+        timeout:
+          max_connect_timeout: 10
+          max_read_timeout: 300
+          max_write_timeout: 30
+        variables: []
+    - id: done
+      type: custom
+      position:
+        x: 2180
+        y: 280
+      positionAbsolute:
+        x: 2180
+        y: 280
+      sourcePosition: right
+      targetPosition: left
+      height: 54
+      width: 244
+      data:
+        type: code
+        title: AI 답 꺼내기
+        desc: agent 답(JSON)의 text 만 꺼낸다. 실패면 error JSON
+        selected: false
+        code_language: python3
+        code: |
+          import json
+
+
+          def main(body: str, status_code: int) -> dict:
+              try:
+                  d = json.loads(body or "{}") or {}
+              except ValueError:
+                  d = {}
+              text = (d.get("text") or "").strip() if isinstance(d, dict) else ""
+              if status_code != 200 or not text:
+                  why = (d.get("error") if isinstance(d, dict) else "") or f"HTTP {status_code}"
+                  return {"text": json.dumps({"error": f"AI(LLM Proxy)가 답을 못 했어요: {why}"[:300]}, ensure_ascii=False)}
+              return {"text": text}
+
+        variables:
+        - variable: body
+          value_selector:
+          - ask
+          - body
+        - variable: status_code
+          value_selector:
+          - ask
+          - status_code
+        outputs:
+          text:
+            type: string
+            children: null
+    - id: end
+      type: custom
+      position:
+        x: 2480
+        y: 280
+      positionAbsolute:
+        x: 2480
         y: 280
       sourcePosition: right
       targetPosition: left
@@ -384,7 +504,7 @@ workflow:
           - verse_text
           variable: verse_text
         - value_selector:
-          - llm
+          - done
           - text
           variable: text
     - id: end_source
