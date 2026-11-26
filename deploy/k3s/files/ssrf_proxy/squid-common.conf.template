@@ -60,9 +60,10 @@ client_request_buffer_max_size 100 MB
 ################################## Performance & Concurrency ###############################
 max_filedescriptors 65536
 connect_timeout 30 seconds
+# 2026-11-26: Ego Lite 로 웹 60개를 여는 HTTP 칸(신규 창업아이템 ① 수집)이 2분을 넘겨 끊겼음 → 칸 설정(600초)에 맞춤
 request_timeout 2 minutes
-read_timeout 2 minutes
-client_lifetime 5 minutes
+read_timeout 10 minutes
+client_lifetime 11 minutes
 shutdown_lifetime 30 seconds
 
 server_persistent_connections on
